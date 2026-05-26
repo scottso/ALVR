@@ -477,13 +477,6 @@ pub struct EyeTrackedFoveationConfig {
     pub smoothing_alpha: f32,
 
     #[schema(strings(
-        display_name = "Center enlargement",
-        help = "Multiplier on the high-resolution center region to absorb residual prediction error. 1.0 = same as static foveation."
-    ))]
-    #[schema(gui(slider(min = 1.0, max = 2.0, step = 0.05)))]
-    pub enlarge_center_factor: f32,
-
-    #[schema(strings(
         display_name = "Saccade fallback threshold",
         help = "Angular gaze velocity above which the warp center snaps back to the lens axis. Foveation during a saccade is invisible to the viewer, and overshoot during a saccade is the worst-case artifact."
     ))]
@@ -1944,7 +1937,6 @@ pub fn session_settings_default() -> SettingsDefault {
                         content: EyeTrackedFoveationConfigDefault {
                             prediction_ms: 40,
                             smoothing_alpha: 0.3,
-                            enlarge_center_factor: 1.15,
                             saccade_velocity_threshold: 8.0,
                         },
                     },

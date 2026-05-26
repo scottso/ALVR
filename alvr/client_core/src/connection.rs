@@ -188,7 +188,6 @@ fn connection_pipeline(
                     }
                     .with_ext(VideoStreamingCapabilitiesExt {
                         eye_tracking: capabilities.eye_tracking,
-                        eye_tracked_foveation: capabilities.eye_tracked_foveation,
                     }),
                 ),
             },

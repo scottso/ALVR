@@ -30,12 +30,6 @@ pub struct VideoStreamingCapabilitiesExt {
     // foveated encoding is worth attempting.
     #[serde(default)]
     pub eye_tracking: bool,
-
-    // Headset's own OpenXR runtime supports gaze-driven foveation
-    // (XR_META_foveation_eye_tracked). Independent of the encoded stream — the headset
-    // can apply gaze-driven shading even if the server is sending static-foveated video.
-    #[serde(default)]
-    pub eye_tracked_foveation: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

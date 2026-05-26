@@ -54,7 +54,6 @@ pub struct AlvrClientCapabilities {
     preferred_encoding_gamma: f32,
     prefer_hdr: bool,
     eye_tracking: bool,
-    eye_tracked_foveation: bool,
 }
 
 #[repr(u8)]
@@ -227,7 +226,6 @@ pub extern "C" fn alvr_initialize(capabilities: AlvrClientCapabilities) {
         preferred_encoding_gamma: capabilities.preferred_encoding_gamma,
         prefer_hdr: capabilities.prefer_hdr,
         eye_tracking: capabilities.eye_tracking,
-        eye_tracked_foveation: capabilities.eye_tracked_foveation,
     };
     *CLIENT_CORE_CONTEXT.lock() = Some(ClientCoreContext::new(capabilities));
 }

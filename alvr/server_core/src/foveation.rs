@@ -127,7 +127,6 @@ mod tests {
             // Disable smoothing and prediction so the tests assert on the raw projection.
             prediction_ms: 0,
             smoothing_alpha: 0.0,
-            enlarge_center_factor: 1.0,
             saccade_velocity_threshold: saccade,
         }
     }

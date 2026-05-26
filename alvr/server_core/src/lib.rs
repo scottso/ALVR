@@ -116,6 +116,16 @@ pub struct ConnectionContext {
     // The center the encoder actually wrote to its GPU buffer for the most recent frame.
     // Written by the C++ encoder thread via FFI after the cbuffer/push-constant update;
     // read by the NAL header builder so the wire carries the exact value the warp used.
+    //
+    // Correctness invariant: this is a single global slot, not a per-frame queue, so it
+    // assumes the encoder pipeline keeps at most one frame in flight between the
+    // `set_applied_foveation_center` call (after the FFR push-constant / cbuffer update)
+    // and the `ServerCoreEvent::VideoPacket` that builds the matching NAL header. If a
+    // future encoder backend starts pipelining two or more frames concurrently, the wire
+    // header for frame N can pick up the value applied for frame N+1 and the client
+    // de-warp will drift. The fix in that case is to key on `timestamp` (mirror the
+    // client-side `foveation_center_queue`) instead of using a global slot. NVENC / AMF
+    // / VAAPI as wired up today are serialized per-frame and respect the invariant.
     applied_foveation_center: Mutex<[f32; 2]>,
     // True iff the client's handshake advertised eye_tracking == true (see
     // VideoStreamingCapabilitiesExt). Gates the FoveationTracker on top of the settings

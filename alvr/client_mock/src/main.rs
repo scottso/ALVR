@@ -203,7 +203,6 @@ fn client_thread(
         preferred_encoding_gamma: 1.0,
         prefer_hdr: false,
         eye_tracking: false,
-        eye_tracked_foveation: false,
     };
     let client_core_context = Arc::new(ClientCoreContext::new(capabilities));
 

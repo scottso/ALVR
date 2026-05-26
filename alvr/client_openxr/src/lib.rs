@@ -345,7 +345,6 @@ pub fn entry_point() {
             prefer_hdr: false,
             eye_tracking: selected_exts.ext_eye_gaze_interaction
                 || selected_exts.fb_eye_tracking_social,
-            eye_tracked_foveation: selected_exts.meta_foveation_eye_tracked,
         };
         let core_context = Arc::new(ClientCoreContext::new(capabilities));
 
