@@ -182,7 +182,10 @@ fn connection_pipeline(
                         prefer_hdr: capabilities.prefer_hdr,
                         ext_str: String::new(),
                     }
-                    .with_ext(VideoStreamingCapabilitiesExt {}),
+                    .with_ext(VideoStreamingCapabilitiesExt {
+                        eye_tracking: capabilities.eye_tracking,
+                        eye_tracked_foveation: capabilities.eye_tracked_foveation,
+                    }),
                 ),
             },
         )))

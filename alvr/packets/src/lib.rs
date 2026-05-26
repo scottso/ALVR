@@ -23,9 +23,19 @@ pub const AUDIO: u16 = 2;
 pub const VIDEO: u16 = 3;
 pub const STATISTICS: u16 = 4;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct VideoStreamingCapabilitiesExt {
-    // Nothing for now
+    // Headset reports it can deliver per-eye gaze samples to the server (XR_EXT_eye_gaze
+    // or XR_FB_eye_tracking_social). Server uses this to decide whether gaze-following
+    // foveated encoding is worth attempting.
+    #[serde(default)]
+    pub eye_tracking: bool,
+
+    // Headset's own OpenXR runtime supports gaze-driven foveation
+    // (XR_META_foveation_eye_tracked). Independent of the encoded stream — the headset
+    // can apply gaze-driven shading even if the server is sending static-foveated video.
+    #[serde(default)]
+    pub eye_tracked_foveation: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -53,11 +63,11 @@ impl VideoStreamingCapabilities {
     }
 
     pub fn ext(&self) -> Result<VideoStreamingCapabilitiesExt> {
-        let _ext_json = json::from_str::<json::Value>(&self.ext_str)?;
-
-        // decode values here
-
-        Ok(VideoStreamingCapabilitiesExt {})
+        // Old clients send an empty ext_str — treat that as defaults.
+        if self.ext_str.is_empty() {
+            return Ok(VideoStreamingCapabilitiesExt::default());
+        }
+        Ok(json::from_str(&self.ext_str)?)
     }
 }
 

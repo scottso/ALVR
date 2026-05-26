@@ -143,12 +143,13 @@ impl StreamContext {
             let xr_level = xr::FoveationLevelFB::from_raw(level as i32);
             let xr_dynamic = xr::FoveationDynamicFB::from_raw(dynamic as i32);
 
-            // Prefer the eye-tracked profile when the runtime supports it; the swapchain
-            // shading then follows the user's gaze instead of being lens-centered. Fall back
-            // to the static FB profile on headsets without the extension or if creation fails
-            // (some runtimes advertise the extension but reject the chained struct under
-            // certain conditions like calibration loss at session start).
-            let eye_tracked = xr_exts.meta_foveation_eye_tracked.is_some().then(|| {
+            // Prefer the eye-tracked profile when both the runtime supports it AND the user
+            // hasn't opted out via settings. Falls back to the static FB profile on headsets
+            // without the extension or if creation fails (some runtimes advertise the
+            // extension but reject the chained struct under certain conditions like
+            // calibration loss at session start).
+            let want_eye_tracked = config.eye_tracked && xr_exts.meta_foveation_eye_tracked.is_some();
+            let eye_tracked = want_eye_tracked.then(|| {
                 extra_extensions::create_eye_tracked_profile(
                     &xr_session,
                     xr_level,

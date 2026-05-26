@@ -71,6 +71,10 @@ pub struct ClientCapabilities {
     pub prefer_10bit: bool,
     pub preferred_encoding_gamma: f32,
     pub prefer_hdr: bool,
+    // Eye tracking and eye-tracked foveation are advertised so the server can decide whether
+    // to recenter the encode warp on gaze. See VideoStreamingCapabilitiesExt for wire format.
+    pub eye_tracking: bool,
+    pub eye_tracked_foveation: bool,
 }
 
 pub struct ClientCoreContext {

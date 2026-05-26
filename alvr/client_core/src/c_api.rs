@@ -224,6 +224,11 @@ pub extern "C" fn alvr_initialize(capabilities: AlvrClientCapabilities) {
         prefer_10bit: capabilities.prefer_10bit,
         preferred_encoding_gamma: capabilities.preferred_encoding_gamma,
         prefer_hdr: capabilities.prefer_hdr,
+        // C-ABI callers (Apple Vision Pro app, etc.) don't yet have a way to advertise eye
+        // tracking through this struct. Default to off — extending AlvrClientCapabilities
+        // would break ABI for those consumers.
+        eye_tracking: false,
+        eye_tracked_foveation: false,
     };
     *CLIENT_CORE_CONTEXT.lock() = Some(ClientCoreContext::new(capabilities));
 }
@@ -691,6 +696,9 @@ pub extern "C" fn alvr_start_stream_opengl(config: AlvrStreamConfig) {
         center_shift_y: config.foveation_center_shift_y,
         edge_ratio_x: config.foveation_edge_ratio_x,
         edge_ratio_y: config.foveation_edge_ratio_y,
+        // Gaze-following encoding is server-controlled; C-ABI callers receive a frame that's
+        // already warped, so this knob is meaningless on the client side.
+        eye_tracked: alvr_session::settings_schema::Switch::Disabled,
     });
     let upscaling = config.enable_upscaling.then_some(UpscalingConfig {
         edge_direction: config.upscaling_edge_direction,
