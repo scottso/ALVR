@@ -178,6 +178,10 @@ void FrameRender::setupFoveatedRendering() {
 }
 
 void FrameRender::UpdateFoveationCenter(float centerShiftX, float centerShiftY) {
+    // Called from CEncoder::Run on the encoder thread, just before Render() dispatches the
+    // FFR compute pipeline. The push-constant store and the vkCmdPushConstants read happen
+    // on the same thread, so no synchronization is needed.
+    //
     // Apply the same pixel-block alignment the init path uses, so the encoded frame's
     // foveated regions stay aligned with the encoder's macroblock grid as gaze moves.
     float targetEyeWidth = (float)Settings::Instance().m_renderWidth / 2;

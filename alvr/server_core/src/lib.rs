@@ -87,10 +87,6 @@ pub enum ServerCoreEvent {
     Buttons(Vec<ButtonEntry>), // Note: this is after mapping
     RequestIDR,
     CaptureFrame,
-    // Push the next foveation warp center to the encoder. (x, y) are normalized in [-1, 1]
-    // where (0, 0) is the lens axis. Emitted from the tracking loop when gaze-following
-    // foveated encoding is enabled and the headset is delivering eye-gaze samples.
-    UpdateFoveationCenter(f32, f32),
     GameRenderLatencyFeedback(Duration), // only used for SteamVR
     ShutdownPending,
     RestartPending,
@@ -113,7 +109,19 @@ pub struct ConnectionContext {
     // pick a representative FOV when projecting gaze samples to encoder-space foveation
     // centers. Updated on every ClientControlPacket::LocalViewParams.
     local_view_params: RwLock<[ViewParams; 2]>,
-    foveation_center: Mutex<[f32; 2]>,
+    // Latest gaze-derived center the tracking loop wants the encoder to use, in normalized
+    // [-1, 1] coords. Single writer (tracking loop); the C++ encoder thread pulls this just
+    // before dispatching the foveation warp.
+    pending_foveation_center: Mutex<[f32; 2]>,
+    // The center the encoder actually wrote to its GPU buffer for the most recent frame.
+    // Written by the C++ encoder thread via FFI after the cbuffer/push-constant update;
+    // read by the NAL header builder so the wire carries the exact value the warp used.
+    applied_foveation_center: Mutex<[f32; 2]>,
+    // True iff the client's handshake advertised eye_tracking == true (see
+    // VideoStreamingCapabilitiesExt). Gates the FoveationTracker on top of the settings
+    // switch and per-frame gaze presence — prevents the tracker from running for clients
+    // whose runtime denies eye-gaze permission.
+    client_eye_tracking_advertised: AtomicBool,
 }
 
 pub fn create_recording_file(connection_context: &ConnectionContext, settings: &Settings) {
@@ -226,7 +234,9 @@ impl ServerCoreContext {
             video_channel_sender: Mutex::new(None),
             haptics_sender: Mutex::new(None),
             local_view_params: RwLock::new([ViewParams::DUMMY; 2]),
-            foveation_center: Mutex::new([0.0, 0.0]),
+            pending_foveation_center: Mutex::new([0.0, 0.0]),
+            applied_foveation_center: Mutex::new([0.0, 0.0]),
+            client_eye_tracking_advertised: AtomicBool::new(false),
         });
 
         let webserver_runtime = Runtime::new().unwrap();
@@ -440,9 +450,11 @@ impl ServerCoreContext {
                         timestamp,
                         global_view_params,
                         is_idr,
-                        // The tracking loop writes here whenever it pushes a new center to
-                        // the encoder. (0, 0) — lens-centered — when gaze tracking is off.
-                        foveation_center: *self.connection_context.foveation_center.lock(),
+                        // The C++ encoder thread publishes the center it actually wrote to
+                        // the FFR cbuffer / push-constants for this frame. Reading from
+                        // applied (not pending) keeps the wire value locked to the value
+                        // the warp pipeline used.
+                        foveation_center: *self.connection_context.applied_foveation_center.lock(),
                     },
                     payload: nal_buffer,
                 });
@@ -517,6 +529,20 @@ impl ServerCoreContext {
                     .bitrate
                     .adapt_to_framerate,
             );
+    }
+
+    /// Read the latest gaze-derived center the tracking loop has queued for the encoder.
+    /// Called by the C++ encoder thread (via FFI) just before it dispatches the foveation
+    /// warp, so the cbuffer/push-constant update and the dispatch happen on the same thread.
+    pub fn get_pending_foveation_center(&self) -> [f32; 2] {
+        *self.connection_context.pending_foveation_center.lock()
+    }
+
+    /// Record the center the encoder actually wrote to its GPU buffer for the most recent
+    /// frame. The NAL header reads from here so the wire value can never diverge from the
+    /// value the warp pipeline used.
+    pub fn set_applied_foveation_center(&self, x: f32, y: f32) {
+        *self.connection_context.applied_foveation_center.lock() = [x, y];
     }
 
     pub fn duration_until_next_vsync(&self) -> Option<Duration> {

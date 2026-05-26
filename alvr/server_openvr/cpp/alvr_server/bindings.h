@@ -124,6 +124,15 @@ extern "C" void (*SetVideoConfigNals)(const unsigned char* configBuffer, int len
 extern "C" void (*VideoSend)(
     unsigned long long targetTimestampNs, unsigned char* buf, int len, bool isIdr
 );
+// Pull the latest gaze-derived foveation center from Rust. Called on the C++ encoder thread
+// (Linux) or compositor thread (Windows) just before the FFR warp dispatch, so the cbuffer /
+// push-constant update and the dispatch happen on the same thread (no D3D11 / Vulkan
+// cross-thread access).
+extern "C" void (*GetPendingFoveationCenter)(float* centerX, float* centerY);
+// Publish the foveation center the encoder actually wrote to its GPU buffer for the frame
+// it's about to encode. Rust writes this through to the next VideoPacketHeader so the
+// client de-warp sees the exact value the warp pipeline used.
+extern "C" void (*SetAppliedFoveationCenter)(float centerX, float centerY);
 extern "C" void (*HapticsSend)(
     unsigned long long path, float duration_s, float frequency, float amplitude
 );
@@ -168,11 +177,6 @@ extern "C" void ShutdownOpenvrClient();
 extern "C" void SetChaperoneArea(float areaWidth, float areaHeight);
 
 extern "C" void CaptureFrame();
-
-// Updates the foveation warp center for subsequent encoded frames. (x, y) are normalized in
-// [-1, 1] where (0, 0) is the lens axis. No-op on Windows for now (D3D11 path will land
-// later) and no-op on Linux when foveated encoding is disabled in settings.
-extern "C" void UpdateFoveationCenter(float centerShiftX, float centerShiftY);
 
 // NalParsing.cpp
 void ParseFrameNals(

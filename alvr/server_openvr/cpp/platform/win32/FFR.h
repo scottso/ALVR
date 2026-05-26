@@ -17,6 +17,9 @@ public:
 
 private:
     Microsoft::WRL::ComPtr<ID3D11Device> mDevice;
+    // Cached at Initialize() so UpdateCenterShift doesn't refcount the immediate context
+    // every frame. Only touched by the compositor thread (see CEncoder::CopyToStaging).
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> mContext;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> mOptimizedTexture;
     Microsoft::WRL::ComPtr<ID3D11VertexShader> mQuadVertexShader;
     // Holds the same buffer the pipeline binds — updating its contents via

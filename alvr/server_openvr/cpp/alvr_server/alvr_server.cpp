@@ -210,6 +210,8 @@ void (*LogPeriodically)(const char* tag, const char* stringPtr);
 void (*DriverReadyIdle)(bool setDefaultChaprone);
 void (*SetVideoConfigNals)(const unsigned char* configBuffer, int len, int codec);
 void (*VideoSend)(unsigned long long targetTimestampNs, unsigned char* buf, int len, bool isIdr);
+void (*GetPendingFoveationCenter)(float* centerX, float* centerY);
+void (*SetAppliedFoveationCenter)(float centerX, float centerY);
 void (*HapticsSend)(unsigned long long path, float duration_s, float frequency, float amplitude);
 void (*ShutdownRuntime)();
 unsigned long long (*PathStringToHash)(const char* path);
@@ -531,13 +533,3 @@ void CaptureFrame() {
 #endif
 }
 
-void UpdateFoveationCenter(float centerShiftX, float centerShiftY) {
-#if defined(__linux__) || defined(_WIN32)
-    if (g_driver_provider.hmd && g_driver_provider.hmd->m_encoder) {
-        g_driver_provider.hmd->m_encoder->UpdateFoveationCenter(centerShiftX, centerShiftY);
-    }
-#else
-    (void)centerShiftX;
-    (void)centerShiftY;
-#endif
-}

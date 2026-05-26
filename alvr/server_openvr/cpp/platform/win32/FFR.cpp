@@ -96,6 +96,11 @@ void FFR::Initialize(ID3D11Texture2D* compositionTexture) {
     // gaze sample moves. With IMMUTABLE the buffer would be locked at creation.
     mFoveatedRenderingBuffer = CreateBuffer(mDevice.Get(), fovVars, D3D11_USAGE_DEFAULT);
 
+    // Cache the immediate context so UpdateCenterShift doesn't refcount it every frame.
+    // Both UpdateCenterShift and the FFR Render dispatch run on the compositor thread (see
+    // CEncoder::CopyToStaging) so single-threaded D3D11 invariants hold.
+    mDevice->GetImmediateContext(&mContext);
+
     std::vector<uint8_t> quadShaderCSO(
         QUAD_SHADER_CSO_PTR, QUAD_SHADER_CSO_PTR + QUAD_SHADER_CSO_LEN
     );
@@ -150,9 +155,7 @@ void FFR::UpdateCenterShift(float centerShiftX, float centerShiftY) {
     fovVars.centerShiftY = ceil(centerShiftY * edgeSizeYAligned / (edgeRatioY * 2.))
         * (edgeRatioY * 2.) / edgeSizeYAligned;
 
-    ComPtr<ID3D11DeviceContext> context;
-    mDevice->GetImmediateContext(&context);
-    UpdateBuffer(context.Get(), mFoveatedRenderingBuffer.Get(), &fovVars);
+    UpdateBuffer(mContext.Get(), mFoveatedRenderingBuffer.Get(), &fovVars);
 }
 
 void FFR::Render() {

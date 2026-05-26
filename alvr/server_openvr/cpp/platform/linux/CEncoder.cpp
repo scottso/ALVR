@@ -205,7 +205,6 @@ void CEncoder::Run() {
         alvr::VkContext vk_ctx(init.device_uuid.data(), {});
 
         FrameRender render(vk_ctx, init, m_fds);
-        m_liveFrameRender.store(&render, std::memory_order_release);
         auto output = render.CreateOutput();
 
         alvr::VkFrame frame(
@@ -242,6 +241,22 @@ void CEncoder::Run() {
                 render.CaptureOutputFrame(
                     Settings::Instance().m_captureFrameDir + "/alvr_frame_output.ppm"
                 );
+            }
+
+            // Pull the latest gaze-derived foveation center from Rust, push it into the
+            // FFR push-constant buffer, and publish it back to Rust as the value the
+            // encoder will apply for *this* frame. All three calls run on this thread
+            // (the encoder thread), so the push-constant update and the dispatch share a
+            // thread — no torn reads, and the wire header carries the same value the
+            // warp pipeline used.
+            float pendingCenterX = 0.0f;
+            float pendingCenterY = 0.0f;
+            if (GetPendingFoveationCenter) {
+                GetPendingFoveationCenter(&pendingCenterX, &pendingCenterY);
+            }
+            render.UpdateFoveationCenter(pendingCenterX, pendingCenterY);
+            if (SetAppliedFoveationCenter) {
+                SetAppliedFoveationCenter(pendingCenterX, pendingCenterY);
             }
 
             render.Render(frame_info.image, frame_info.semaphore_value);
@@ -300,18 +315,8 @@ void CEncoder::Run() {
         Error(err.str().c_str());
     }
 
-    // FrameRender goes out of scope as Run() returns. Clear the pointer so any stray
-    // UpdateFoveationCenter from the Rust side becomes a no-op instead of a use-after-free.
-    m_liveFrameRender.store(nullptr, std::memory_order_release);
-
     client.events = POLLHUP;
     close(client.fd);
-}
-
-void CEncoder::UpdateFoveationCenter(float centerShiftX, float centerShiftY) {
-    if (FrameRender* render = m_liveFrameRender.load(std::memory_order_acquire)) {
-        render->UpdateFoveationCenter(centerShiftX, centerShiftY);
-    }
 }
 
 void CEncoder::Stop() {

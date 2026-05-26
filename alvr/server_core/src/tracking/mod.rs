@@ -470,21 +470,26 @@ pub fn tracking_loop(
                 sink.send_tracking(&tracking.face);
             }
 
-            // Gaze-following foveated encoding. Only emits an UpdateFoveationCenter event
-            // when the user has both opted in (settings.video.foveated_encoding.eye_tracked
-            // is enabled) and the client is delivering a usable gaze sample. Otherwise the
-            // encoder keeps the static center from setupFoveatedRendering.
+            // Gaze-following foveated encoding. Writes to pending_foveation_center; the
+            // C++ encoder thread pulls from there each frame. Gated on:
+            //   - the eye_tracked sub-switch in settings,
+            //   - the client's handshake-time advertisement (so a runtime that denied
+            //     eye-gaze permission doesn't drive the encoder),
+            //   - a usable per-frame gaze sample.
+            // When the gate is closed, pending stays at whatever value it was last seeded
+            // with (the static center from settings, set at stream start in connection.rs),
+            // so the encoder keeps using fixed foveation.
             let video_settings = &session_manager_lock.settings().video;
             if let Switch::Enabled(foveation_config) = &video_settings.foveated_encoding
                 && let Switch::Enabled(eye_tracked_config) = &foveation_config.eye_tracked
+                && ctx
+                    .client_eye_tracking_advertised
+                    .load(std::sync::atomic::Ordering::Relaxed)
                 && let Some(gaze) = tracking.face.eyes_combined
             {
                 let fov = ctx.local_view_params.read()[0].fov;
                 let center = foveation_tracker.update(gaze, fov, eye_tracked_config);
-                *ctx.foveation_center.lock() = center;
-                ctx.events_sender
-                    .send(ServerCoreEvent::UpdateFoveationCenter(center[0], center[1]))
-                    .ok();
+                *ctx.pending_foveation_center.lock() = center;
             }
 
             if session_manager_lock.settings().extra.logging.log_tracking {
