@@ -576,7 +576,7 @@ fn connection_pipeline(
     // Record the client's eye-tracking advertisement so the tracking loop can gate on it,
     // and seed pending/applied foveation centers with the static config — both the encoder
     // (via FFI pull on its own thread) and the wire header read from these, so an unseeded
-    // state would let a stale value from a prior session bleed into this one (review #7).
+    // state would let a stale value from a prior session bleed into this one.
     let client_ext_caps = streaming_caps.ext().unwrap_or_default();
     ctx.client_eye_tracking_advertised.store(
         client_ext_caps.eye_tracking,

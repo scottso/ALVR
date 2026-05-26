@@ -121,7 +121,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Run tests
-        run: cargo test -p alvr_session
+        run: cargo test -p alvr_session -p alvr_server_core -p alvr_graphics
 
   check-format:
     runs-on: ubuntu-latest

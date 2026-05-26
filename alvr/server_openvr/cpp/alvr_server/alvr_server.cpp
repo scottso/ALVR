@@ -532,4 +532,3 @@ void CaptureFrame() {
     }
 #endif
 }
-
