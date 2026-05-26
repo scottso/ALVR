@@ -111,6 +111,11 @@ pub struct StreamRenderer {
     pipeline: RenderPipeline,
     views_objects: [ViewObjects; 2],
     foveation_buffer: Buffer,
+    // Caches the bytes most recently written to `foveation_buffer`. The per-frame override
+    // in stream_renderer's caller recomputes params every frame; when the server isn't doing
+    // gaze tracking those params are bitwise identical to the previous frame, so the
+    // wgpu queue.write_buffer round-trip is a no-op we can skip.
+    foveation_cache: std::cell::Cell<[u8; FOVEATION_PARAMS_SIZE as usize]>,
 }
 
 impl StreamRenderer {
@@ -324,15 +329,24 @@ impl StreamRenderer {
             pipeline,
             views_objects: view_objects.try_into().unwrap(),
             foveation_buffer,
+            foveation_cache: std::cell::Cell::new(initial_foveation_params.to_bytes()),
         }
     }
 
     /// Update the per-frame foveation warp parameters. Has no effect when foveated encoding is
-    /// disabled (the shader skips the warp path entirely via the `ENABLE_FFE` override).
+    /// disabled (the shader skips the warp path entirely via the `ENABLE_FFE` override). The
+    /// caller pumps this every frame; we skip the GPU upload when the bytes haven't changed
+    /// since the last write, which is the common case for static-foveation streams (the server
+    /// reports the same center every frame).
     pub fn set_foveation_params(&self, params: FoveationParams) {
+        let bytes = params.to_bytes();
+        if self.foveation_cache.get() == bytes {
+            return;
+        }
+        self.foveation_cache.set(bytes);
         self.context
             .queue
-            .write_buffer(&self.foveation_buffer, 0, &params.to_bytes());
+            .write_buffer(&self.foveation_buffer, 0, &bytes);
     }
 
     /// # Safety
