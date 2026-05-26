@@ -29,7 +29,9 @@ pub fn create_eye_tracked_profile<G>(
     };
     let level_profile = sys::FoveationLevelProfileCreateInfoFB {
         ty: sys::FoveationLevelProfileCreateInfoFB::TYPE,
-        next: (&raw const eye_tracked).cast::<std::ffi::c_void>().cast_mut(),
+        next: (&raw const eye_tracked)
+            .cast::<std::ffi::c_void>()
+            .cast_mut(),
         level,
         vertical_offset,
         dynamic,

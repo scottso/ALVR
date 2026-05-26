@@ -92,7 +92,9 @@ FFR::FFR(ID3D11Device* device)
 
 void FFR::Initialize(ID3D11Texture2D* compositionTexture) {
     auto fovVars = CalculateFoveationVars();
-    ComPtr<ID3D11Buffer> foveatedRenderingBuffer = CreateBuffer(mDevice.Get(), fovVars);
+    // D3D11_USAGE_DEFAULT so we can refresh the cbuffer via UpdateSubresource each time the
+    // gaze sample moves. With IMMUTABLE the buffer would be locked at creation.
+    mFoveatedRenderingBuffer = CreateBuffer(mDevice.Get(), fovVars, D3D11_USAGE_DEFAULT);
 
     std::vector<uint8_t> quadShaderCSO(
         QUAD_SHADER_CSO_PTR, QUAD_SHADER_CSO_PTR + QUAD_SHADER_CSO_LEN
@@ -118,13 +120,39 @@ void FFR::Initialize(ID3D11Texture2D* compositionTexture) {
             mQuadVertexShader.Get(),
             compressAxisAlignedShaderCSO,
             mOptimizedTexture.Get(),
-            foveatedRenderingBuffer.Get()
+            mFoveatedRenderingBuffer.Get()
         );
 
         mPipelines.push_back(compressAxisAlignedPipeline);
     } else {
         mOptimizedTexture = compositionTexture;
     }
+}
+
+void FFR::UpdateCenterShift(float centerShiftX, float centerShiftY) {
+    if (!mFoveatedRenderingBuffer) {
+        return;
+    }
+
+    // Recompute the full FoveationVars block — the alignment math depends on the same static
+    // resolution/edge-ratio knobs the init path uses, so this is cheap and keeps the warp
+    // center quantized to the encoder's macroblock grid.
+    FoveationVars fovVars = CalculateFoveationVars();
+    float targetEyeWidth = (float)Settings::Instance().m_renderWidth / 2;
+    float targetEyeHeight = (float)Settings::Instance().m_renderHeight;
+    float edgeRatioX = (float)Settings::Instance().m_foveationEdgeRatioX;
+    float edgeRatioY = (float)Settings::Instance().m_foveationEdgeRatioY;
+    float edgeSizeXAligned = targetEyeWidth - fovVars.centerSizeX * targetEyeWidth;
+    float edgeSizeYAligned = targetEyeHeight - fovVars.centerSizeY * targetEyeHeight;
+
+    fovVars.centerShiftX = ceil(centerShiftX * edgeSizeXAligned / (edgeRatioX * 2.))
+        * (edgeRatioX * 2.) / edgeSizeXAligned;
+    fovVars.centerShiftY = ceil(centerShiftY * edgeSizeYAligned / (edgeRatioY * 2.))
+        * (edgeRatioY * 2.) / edgeSizeYAligned;
+
+    ComPtr<ID3D11DeviceContext> context;
+    mDevice->GetImmediateContext(&context);
+    UpdateBuffer(context.Get(), mFoveatedRenderingBuffer.Get(), &fovVars);
 }
 
 void FFR::Render() {

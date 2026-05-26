@@ -148,16 +148,19 @@ impl StreamContext {
             // without the extension or if creation fails (some runtimes advertise the
             // extension but reject the chained struct under certain conditions like
             // calibration loss at session start).
-            let want_eye_tracked = config.eye_tracked && xr_exts.meta_foveation_eye_tracked.is_some();
-            let eye_tracked = want_eye_tracked.then(|| {
-                extra_extensions::create_eye_tracked_profile(
-                    &xr_session,
-                    xr_level,
-                    config.vertical_offset_deg,
-                    xr_dynamic,
-                )
-                .ok()
-            }).flatten();
+            let want_eye_tracked =
+                config.eye_tracked && xr_exts.meta_foveation_eye_tracked.is_some();
+            let eye_tracked = want_eye_tracked
+                .then(|| {
+                    extra_extensions::create_eye_tracked_profile(
+                        &xr_session,
+                        xr_level,
+                        config.vertical_offset_deg,
+                        xr_dynamic,
+                    )
+                    .ok()
+                })
+                .flatten();
 
             eye_tracked.or_else(|| {
                 xr_session

@@ -160,3 +160,9 @@ void CEncoder::OnStreamStart() { m_scheduler.OnStreamStart(); }
 void CEncoder::InsertIDR() { m_scheduler.InsertIDR(); }
 
 void CEncoder::CaptureFrame() { }
+
+void CEncoder::UpdateFoveationCenter(float centerShiftX, float centerShiftY) {
+    if (m_FrameRender) {
+        m_FrameRender->UpdateFoveationCenter(centerShiftX, centerShiftY);
+    }
+}

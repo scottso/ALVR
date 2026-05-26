@@ -60,18 +60,30 @@ const FOVEATION_PARAMS_SIZE: u64 = mem::size_of::<FoveationParams>() as u64;
 impl FoveationParams {
     fn to_bytes(self) -> [u8; FOVEATION_PARAMS_SIZE as usize] {
         let floats: [f32; 24] = [
-            self.view_size_ratio.x, self.view_size_ratio.y,
-            self.edge_ratio.x, self.edge_ratio.y,
-            self.c1.x, self.c1.y,
-            self.c2.x, self.c2.y,
-            self.lo_bound.x, self.lo_bound.y,
-            self.hi_bound.x, self.hi_bound.y,
-            self.a_left.x, self.a_left.y,
-            self.b_left.x, self.b_left.y,
-            self.a_right.x, self.a_right.y,
-            self.b_right.x, self.b_right.y,
-            self.c_right.x, self.c_right.y,
-            0.0, 0.0,
+            self.view_size_ratio.x,
+            self.view_size_ratio.y,
+            self.edge_ratio.x,
+            self.edge_ratio.y,
+            self.c1.x,
+            self.c1.y,
+            self.c2.x,
+            self.c2.y,
+            self.lo_bound.x,
+            self.lo_bound.y,
+            self.hi_bound.x,
+            self.hi_bound.y,
+            self.a_left.x,
+            self.a_left.y,
+            self.b_left.x,
+            self.b_left.y,
+            self.a_right.x,
+            self.a_right.y,
+            self.b_right.x,
+            self.b_right.y,
+            self.c_right.x,
+            self.c_right.y,
+            0.0,
+            0.0,
         ];
         let mut bytes = [0u8; FOVEATION_PARAMS_SIZE as usize];
         for (i, f) in floats.iter().enumerate() {
@@ -178,11 +190,9 @@ impl StreamRenderer {
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        context.queue.write_buffer(
-            &foveation_buffer,
-            0,
-            &initial_foveation_params.to_bytes(),
-        );
+        context
+            .queue
+            .write_buffer(&foveation_buffer, 0, &initial_foveation_params.to_bytes());
 
         if let Some(upscaling) = upscaling {
             constants.extend([

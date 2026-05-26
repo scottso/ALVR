@@ -67,6 +67,10 @@ public:
 
     void CaptureFrame();
 
+    // Forwards to the live FrameRender's FFR. Safe to call before initialization (drops
+    // silently while m_FrameRender is empty).
+    void UpdateFoveationCenter(float centerShiftX, float centerShiftY);
+
 private:
     CThreadEvent m_newFrameReady, m_encodeFinished;
     std::shared_ptr<VideoEncoder> m_videoEncoder;

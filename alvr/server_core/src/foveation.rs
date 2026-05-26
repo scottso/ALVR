@@ -30,12 +30,7 @@ impl FoveationTracker {
     // eye — both are very close in practice, and the gaze sample doesn't disambiguate per-eye
     // anyway). Returns None if the result is essentially zero and not worth a wire round-trip
     // (e.g. extension reports gaze at lens axis).
-    pub fn update(
-        &mut self,
-        gaze: Quat,
-        fov: Fov,
-        config: &EyeTrackedFoveationConfig,
-    ) -> [f32; 2] {
+    pub fn update(&mut self, gaze: Quat, fov: Fov, config: &EyeTrackedFoveationConfig) -> [f32; 2] {
         let now = Instant::now();
 
         let direction = gaze * Vec3::NEG_Z;
@@ -52,7 +47,10 @@ impl FoveationTracker {
         };
 
         let predicted = if let Some(prev_at) = self.last_input_at {
-            let dt = now.saturating_duration_since(prev_at).as_secs_f32().max(1e-4);
+            let dt = now
+                .saturating_duration_since(prev_at)
+                .as_secs_f32()
+                .max(1e-4);
             let vx = (raw[0] - self.last_input[0]) / dt;
             let vy = (raw[1] - self.last_input[1]) / dt;
             let speed = (vx * vx + vy * vy).sqrt();

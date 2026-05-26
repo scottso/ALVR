@@ -637,7 +637,7 @@ bool FrameRender::RenderFrame(
         D3D11_TEXTURE2D_DESC srcDesc;
         textures[0]->GetDesc(&srcDesc);
 
-        D3D11_SHADER_RESOURCE_VIEW_DESC SRVDesc = {};
+        D3D11_SHADER_RESOURCE_VIEW_DESC SRVDesc = { };
         SRVDesc.Format = srcDesc.Format;
         SRVDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
         SRVDesc.Texture2D.MostDetailedMip = 0;
@@ -890,5 +890,11 @@ void FrameRender::GetEncodingResolution(uint32_t* width, uint32_t* height) {
     } else {
         *width = Settings::Instance().m_renderWidth;
         *height = Settings::Instance().m_renderHeight;
+    }
+}
+
+void FrameRender::UpdateFoveationCenter(float centerShiftX, float centerShiftY) {
+    if (enableFFE && m_ffr) {
+        m_ffr->UpdateCenterShift(centerShiftX, centerShiftY);
     }
 }
