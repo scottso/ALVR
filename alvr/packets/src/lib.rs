@@ -248,6 +248,12 @@ pub struct VideoPacketHeader {
     pub timestamp: Duration,
     pub global_view_params: [ViewParams; 2],
     pub is_idr: bool,
+    // Normalized [-1, 1] foveation center the server used when warping this frame. Carried
+    // per-frame so the client de-warp uses the exact same center the encoder did, regardless
+    // of how stale the client's local gaze sample is. (0, 0) means lens-centered, which is
+    // what the server emits unless gaze-following foveated encoding is active.
+    #[serde(default)]
+    pub foveation_center: [f32; 2],
 }
 
 #[derive(Serialize, Deserialize)]

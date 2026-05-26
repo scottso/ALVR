@@ -297,6 +297,20 @@ impl ClientCoreContext {
         *global_view_params_lock
     }
 
+    /// Returns the foveation warp center the server used when encoding this frame, in
+    /// normalized [-1, 1] coordinates. Defaults to (0, 0) — lens-centered — when no header
+    /// is queued for `timestamp` (frame dropped, or pre-A.4 server that doesn't fill the
+    /// field yet — serde's default skips it).
+    pub fn foveation_center_for(&self, timestamp: Duration) -> [f32; 2] {
+        for (ts, center) in &*self.connection_context.foveation_center_queue.lock() {
+            if *ts == timestamp {
+                return *center;
+            }
+        }
+
+        [0.0, 0.0]
+    }
+
     pub fn report_submit(&self, timestamp: Duration, vsync_queue: Duration) {
         dbg_client_core!("report_submit");
 

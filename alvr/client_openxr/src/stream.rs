@@ -442,6 +442,23 @@ impl StreamContext {
             openxr_display_time = vsync_time;
         }
 
+        // Update the de-warp shader with the foveation center the server used when encoding
+        // this specific frame. Without this, gaze-following encoded video would look
+        // distorted because the de-warp assumes a different (typically static) center than
+        // the encoder used. When the server doesn't do gaze-following encoding the center is
+        // (0, 0) and this collapses to the static-foveation behavior the shader had before.
+        if let Some(static_config) = &self.config.foveated_encoding_config {
+            let [center_x, center_y] = self.core_context.foveation_center_for(timestamp);
+            let mut per_frame_config = static_config.clone();
+            per_frame_config.center_shift_x = center_x;
+            per_frame_config.center_shift_y = center_y;
+            let (_resolution, params) = alvr_graphics::foveated_encoding_shader_constants(
+                self.config.view_resolution,
+                per_frame_config,
+            );
+            self.renderer.set_foveation_params(params);
+        }
+
         self.renderer.render(
             buffer_ptr,
             [

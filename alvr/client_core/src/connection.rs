@@ -65,6 +65,10 @@ pub struct ConnectionContext {
     pub statistics_manager: Mutex<Option<StatisticsManager>>,
     pub decoder_callback: Mutex<Option<Box<DecoderCallback>>>,
     pub global_view_params_queue: Mutex<VecDeque<(Duration, [ViewParams; 2])>>,
+    // Per-frame foveation center the server used when warping each video frame, keyed by
+    // timestamp. The client de-warp must use *this* center (not its own latest gaze sample)
+    // or the un-warp won't line up with the encoded pixels.
+    pub foveation_center_queue: Mutex<VecDeque<(Duration, [f32; 2])>>,
     pub max_prediction: RwLock<Duration>,
 }
 
@@ -314,6 +318,16 @@ fn connection_pipeline(
 
                         while global_view_params_queue_lock.len() > 128 {
                             global_view_params_queue_lock.pop_front();
+                        }
+                    }
+                    {
+                        let foveation_center_queue_lock = &mut ctx.foveation_center_queue.lock();
+
+                        foveation_center_queue_lock
+                            .push_back((header.timestamp, header.foveation_center));
+
+                        while foveation_center_queue_lock.len() > 128 {
+                            foveation_center_queue_lock.pop_front();
                         }
                     }
 

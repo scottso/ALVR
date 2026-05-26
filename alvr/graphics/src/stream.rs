@@ -605,6 +605,7 @@ mod tests {
             center_shift_y: 0.0,
             edge_ratio_x: 4.0,
             edge_ratio_y: 5.0,
+            eye_tracked: alvr_session::settings_schema::Switch::Disabled,
         };
 
         let (resolution, params) =

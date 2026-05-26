@@ -428,6 +428,10 @@ impl ServerCoreContext {
                         timestamp,
                         global_view_params,
                         is_idr,
+                        // Server-side gaze-following encoding is not wired into the C++
+                        // encoder yet — for now the warp is always lens-centered. Future
+                        // server-side work will pass the actual encode-time center here.
+                        foveation_center: [0.0, 0.0],
                     },
                     payload: nal_buffer,
                 });
