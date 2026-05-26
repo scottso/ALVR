@@ -53,6 +53,8 @@ pub struct AlvrClientCapabilities {
     prefer_10bit: bool,
     preferred_encoding_gamma: f32,
     prefer_hdr: bool,
+    eye_tracking: bool,
+    eye_tracked_foveation: bool,
 }
 
 #[repr(u8)]
@@ -224,11 +226,8 @@ pub extern "C" fn alvr_initialize(capabilities: AlvrClientCapabilities) {
         prefer_10bit: capabilities.prefer_10bit,
         preferred_encoding_gamma: capabilities.preferred_encoding_gamma,
         prefer_hdr: capabilities.prefer_hdr,
-        // C-ABI callers (Apple Vision Pro app, etc.) don't yet have a way to advertise eye
-        // tracking through this struct. Default to off — extending AlvrClientCapabilities
-        // would break ABI for those consumers.
-        eye_tracking: false,
-        eye_tracked_foveation: false,
+        eye_tracking: capabilities.eye_tracking,
+        eye_tracked_foveation: capabilities.eye_tracked_foveation,
     };
     *CLIENT_CORE_CONTEXT.lock() = Some(ClientCoreContext::new(capabilities));
 }
@@ -563,6 +562,26 @@ pub extern "C" fn alvr_report_compositor_start(
         unsafe {
             *out_view_params = alvr_common::to_capi_view_params(&view_params[0]);
             *out_view_params.offset(1) = alvr_common::to_capi_view_params(&view_params[1]);
+        }
+    }
+}
+
+/// Writes the foveation warp center the server used when encoding the frame with the given
+/// timestamp into `out_center_x` / `out_center_y`, in normalized [-1, 1] coords. Falls back to
+/// (0, 0) — lens-centered — when no header is queued for that timestamp (dropped frame or
+/// pre-A.4 server). Intended for C-ABI clients (e.g. the AVP app) that drive their own
+/// foveation de-warp shader and need the per-frame center to match what the encoder applied.
+#[unsafe(no_mangle)]
+pub extern "C" fn alvr_get_foveation_center(
+    target_timestamp_ns: u64,
+    out_center_x: *mut f32,
+    out_center_y: *mut f32,
+) {
+    if let Some(context) = &*CLIENT_CORE_CONTEXT.lock() {
+        let [x, y] = context.foveation_center_for(Duration::from_nanos(target_timestamp_ns));
+        unsafe {
+            *out_center_x = x;
+            *out_center_y = y;
         }
     }
 }
