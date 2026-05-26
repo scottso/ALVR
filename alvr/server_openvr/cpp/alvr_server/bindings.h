@@ -169,6 +169,11 @@ extern "C" void SetChaperoneArea(float areaWidth, float areaHeight);
 
 extern "C" void CaptureFrame();
 
+// Updates the foveation warp center for subsequent encoded frames. (x, y) are normalized in
+// [-1, 1] where (0, 0) is the lens axis. No-op on Windows for now (D3D11 path will land
+// later) and no-op on Linux when foveated encoding is disabled in settings.
+extern "C" void UpdateFoveationCenter(float centerShiftX, float centerShiftY);
+
 // NalParsing.cpp
 void ParseFrameNals(
     int codec, unsigned char* buf, int len, unsigned long long targetTimestampNs, bool isIdr

@@ -1223,6 +1223,7 @@ fn connection_pipeline(
                         ctx.events_sender.send(ServerCoreEvent::RequestIDR).ok();
                     }
                     ClientControlPacket::LocalViewParams(params) => {
+                        *ctx.local_view_params.write() = params;
                         ctx.events_sender
                             .send(ServerCoreEvent::LocalViewParams(params))
                             .ok();

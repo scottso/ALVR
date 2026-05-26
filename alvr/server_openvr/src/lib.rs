@@ -273,6 +273,9 @@ fn event_loop(events_receiver: mpsc::Receiver<ServerCoreEvent>) {
                 }
                 ServerCoreEvent::RequestIDR => unsafe { RequestIDR() },
                 ServerCoreEvent::CaptureFrame => unsafe { CaptureFrame() },
+                ServerCoreEvent::UpdateFoveationCenter(x, y) => unsafe {
+                    UpdateFoveationCenter(x, y)
+                },
                 ServerCoreEvent::GameRenderLatencyFeedback(game_latency) => {
                     if cfg!(target_os = "linux") && game_latency.as_secs_f32() > 0.25 {
                         let now = Instant::now();

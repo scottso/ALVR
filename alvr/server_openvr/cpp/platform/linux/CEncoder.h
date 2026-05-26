@@ -7,6 +7,7 @@
 #include <poll.h>
 #include <sys/types.h>
 
+class FrameRender;
 class PoseHistory;
 
 class CEncoder : public CThread {
@@ -22,6 +23,11 @@ public:
     bool IsConnected() { return m_connected; }
     void CaptureFrame();
 
+    // Forwards the foveation center to the live FrameRender, if any. Called from the C-ABI
+    // entry point that the Rust tracking loop pumps on each gaze sample. Safe to call when
+    // streaming hasn't started yet (drops silently).
+    void UpdateFoveationCenter(float centerShiftX, float centerShiftY);
+
 private:
     void GetFds(int client, int (*fds)[6]);
     std::shared_ptr<PoseHistory> m_poseHistory;
@@ -32,4 +38,5 @@ private:
     int m_fds[6];
     bool m_connected = false;
     std::atomic_bool m_captureFrame = false;
+    std::atomic<FrameRender*> m_liveFrameRender { nullptr };
 };

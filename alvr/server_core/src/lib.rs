@@ -1,6 +1,7 @@
 mod bitrate;
 mod c_api;
 mod connection;
+mod foveation;
 mod hand_gestures;
 mod haptics;
 mod input_mapping;
@@ -86,6 +87,10 @@ pub enum ServerCoreEvent {
     Buttons(Vec<ButtonEntry>), // Note: this is after mapping
     RequestIDR,
     CaptureFrame,
+    // Push the next foveation warp center to the encoder. (x, y) are normalized in [-1, 1]
+    // where (0, 0) is the lens axis. Emitted from the tracking loop when gaze-following
+    // foveated encoding is enabled and the headset is delivering eye-gaze samples.
+    UpdateFoveationCenter(f32, f32),
     GameRenderLatencyFeedback(Duration), // only used for SteamVR
     ShutdownPending,
     RestartPending,
@@ -104,6 +109,11 @@ pub struct ConnectionContext {
     clients_to_be_removed: Mutex<HashSet<String>>,
     video_channel_sender: Mutex<Option<SyncSender<VideoPacket>>>,
     haptics_sender: Mutex<Option<StreamSender<Haptics>>>,
+    // Latest head-local view params reported by the client. The tracking loop reads this to
+    // pick a representative FOV when projecting gaze samples to encoder-space foveation
+    // centers. Updated on every ClientControlPacket::LocalViewParams.
+    local_view_params: RwLock<[ViewParams; 2]>,
+    foveation_center: Mutex<[f32; 2]>,
 }
 
 pub fn create_recording_file(connection_context: &ConnectionContext, settings: &Settings) {
@@ -215,6 +225,8 @@ impl ServerCoreContext {
             clients_to_be_removed: Mutex::new(HashSet::new()),
             video_channel_sender: Mutex::new(None),
             haptics_sender: Mutex::new(None),
+            local_view_params: RwLock::new([ViewParams::DUMMY; 2]),
+            foveation_center: Mutex::new([0.0, 0.0]),
         });
 
         let webserver_runtime = Runtime::new().unwrap();
@@ -428,10 +440,9 @@ impl ServerCoreContext {
                         timestamp,
                         global_view_params,
                         is_idr,
-                        // Server-side gaze-following encoding is not wired into the C++
-                        // encoder yet — for now the warp is always lens-centered. Future
-                        // server-side work will pass the actual encode-time center here.
-                        foveation_center: [0.0, 0.0],
+                        // The tracking loop writes here whenever it pushes a new center to
+                        // the encoder. (0, 0) — lens-centered — when gaze tracking is off.
+                        foveation_center: *self.connection_context.foveation_center.lock(),
                     },
                     payload: nal_buffer,
                 });

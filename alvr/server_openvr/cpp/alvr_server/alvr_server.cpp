@@ -530,3 +530,15 @@ void CaptureFrame() {
     }
 #endif
 }
+
+void UpdateFoveationCenter(float centerShiftX, float centerShiftY) {
+#ifdef __linux__
+    if (g_driver_provider.hmd && g_driver_provider.hmd->m_encoder) {
+        g_driver_provider.hmd->m_encoder->UpdateFoveationCenter(centerShiftX, centerShiftY);
+    }
+#else
+    // D3D11 path lands later. Suppress unused-parameter warnings without dragging in <cstddef>.
+    (void)centerShiftX;
+    (void)centerShiftY;
+#endif
+}

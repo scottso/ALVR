@@ -24,17 +24,30 @@ private:
         float sharpening;
     };
 
+    // Specialization constants. centerShift used to live here too but moved to
+    // FoveationPushConstants so the warp center can follow gaze each frame.
     struct FoveationVars {
         float eyeWidthRatio;
         float eyeHeightRatio;
         float centerSizeX;
         float centerSizeY;
-        float centerShiftX;
-        float centerShiftY;
         float edgeRatioX;
         float edgeRatioY;
     };
 
+    // Push-constant block laid out to match the `PushConstants` struct in ffr.comp.
+    struct FoveationPushConstants {
+        float centerShiftX;
+        float centerShiftY;
+    };
+
+public:
+    // Update the per-frame foveation center. Values are in normalized [-1, 1] coords and are
+    // applied at the next Render() invocation. No-op if foveated encoding is disabled (the
+    // foveation pipeline is never registered in that case).
+    void UpdateFoveationCenter(float centerShiftX, float centerShiftY);
+
+private:
     void setupColorCorrection();
     void setupFoveatedRendering();
     void setupCustomShaders(const std::string& stage);
@@ -44,5 +57,6 @@ private:
     ExternalHandle m_handle = ExternalHandle::None;
     ColorCorrection m_colorCorrectionConstants;
     FoveationVars m_foveatedRenderingConstants;
+    FoveationPushConstants m_foveatedRenderingPushConstants = { 0.0f, 0.0f };
     std::vector<RenderPipeline*> m_pipelines;
 };

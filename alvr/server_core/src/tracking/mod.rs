@@ -9,6 +9,7 @@ pub use vmc::*;
 use crate::{
     ConnectionContext, SESSION_MANAGER, ServerCoreEvent,
     connection::STREAMING_RECV_TIMEOUT,
+    foveation::FoveationTracker,
     hand_gestures::{self, HAND_GESTURE_BUTTON_SET, HandGestureManager},
     input_mapping::ButtonMappingManager,
 };
@@ -384,6 +385,8 @@ pub fn tracking_loop(
         .into_option()
         .and_then(|config| VMCSink::new(config).ok());
 
+    let mut foveation_tracker = FoveationTracker::new();
+
     while is_streaming() {
         let data = match tracking_receiver.recv(STREAMING_RECV_TIMEOUT) {
             Ok(tracking) => tracking,
@@ -465,6 +468,23 @@ pub fn tracking_loop(
 
             if let Some(sink) = &mut face_tracking_sink {
                 sink.send_tracking(&tracking.face);
+            }
+
+            // Gaze-following foveated encoding. Only emits an UpdateFoveationCenter event
+            // when the user has both opted in (settings.video.foveated_encoding.eye_tracked
+            // is enabled) and the client is delivering a usable gaze sample. Otherwise the
+            // encoder keeps the static center from setupFoveatedRendering.
+            let video_settings = &session_manager_lock.settings().video;
+            if let Switch::Enabled(foveation_config) = &video_settings.foveated_encoding
+                && let Switch::Enabled(eye_tracked_config) = &foveation_config.eye_tracked
+                && let Some(gaze) = tracking.face.eyes_combined
+            {
+                let fov = ctx.local_view_params.read()[0].fov;
+                let center = foveation_tracker.update(gaze, fov, eye_tracked_config);
+                *ctx.foveation_center.lock() = center;
+                ctx.events_sender
+                    .send(ServerCoreEvent::UpdateFoveationCenter(center[0], center[1]))
+                    .ok();
             }
 
             if session_manager_lock.settings().extra.logging.log_tracking {

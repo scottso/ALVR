@@ -205,6 +205,7 @@ void CEncoder::Run() {
         alvr::VkContext vk_ctx(init.device_uuid.data(), {});
 
         FrameRender render(vk_ctx, init, m_fds);
+        m_liveFrameRender.store(&render, std::memory_order_release);
         auto output = render.CreateOutput();
 
         alvr::VkFrame frame(
@@ -299,8 +300,18 @@ void CEncoder::Run() {
         Error(err.str().c_str());
     }
 
+    // FrameRender goes out of scope as Run() returns. Clear the pointer so any stray
+    // UpdateFoveationCenter from the Rust side becomes a no-op instead of a use-after-free.
+    m_liveFrameRender.store(nullptr, std::memory_order_release);
+
     client.events = POLLHUP;
     close(client.fd);
+}
+
+void CEncoder::UpdateFoveationCenter(float centerShiftX, float centerShiftY) {
+    if (FrameRender* render = m_liveFrameRender.load(std::memory_order_acquire)) {
+        render->UpdateFoveationCenter(centerShiftX, centerShiftY);
+    }
 }
 
 void CEncoder::Stop() {
