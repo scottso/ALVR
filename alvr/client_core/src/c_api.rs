@@ -567,10 +567,12 @@ pub extern "C" fn alvr_report_compositor_start(
 }
 
 /// Writes the foveation warp center the server used when encoding the frame with the given
-/// timestamp into `out_center_x` / `out_center_y`, in normalized [-1, 1] coords. Falls back to
-/// (0, 0) — lens-centered — when no header is queued for that timestamp (dropped frame or
-/// pre-A.4 server). Intended for C-ABI clients (e.g. the AVP app) that drive their own
-/// foveation de-warp shader and need the per-frame center to match what the encoder applied.
+/// timestamp into `out_center_x` / `out_center_y`, in normalized [-1, 1] coords. The out
+/// pointers are left unmodified when no header is queued for that timestamp (dropped frame
+/// or pre-A.4 server), so callers must pre-initialize them to a sensible fallback —
+/// typically the negotiated static `FoveationSettings.center_shift_{x,y}`. Intended for
+/// C-ABI clients (e.g. the AVP app) that drive their own foveation de-warp shader and need
+/// the per-frame center to match what the encoder applied.
 #[unsafe(no_mangle)]
 pub extern "C" fn alvr_get_foveation_center(
     target_timestamp_ns: u64,
@@ -578,10 +580,13 @@ pub extern "C" fn alvr_get_foveation_center(
     out_center_y: *mut f32,
 ) {
     if let Some(context) = &*CLIENT_CORE_CONTEXT.lock() {
-        let [x, y] = context.foveation_center_for(Duration::from_nanos(target_timestamp_ns));
-        unsafe {
-            *out_center_x = x;
-            *out_center_y = y;
+        if let Some([x, y]) =
+            context.foveation_center_for(Duration::from_nanos(target_timestamp_ns))
+        {
+            unsafe {
+                *out_center_x = x;
+                *out_center_y = y;
+            }
         }
     }
 }
