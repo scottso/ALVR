@@ -577,14 +577,13 @@ pub extern "C" fn alvr_get_foveation_center(
     out_center_x: *mut f32,
     out_center_y: *mut f32,
 ) {
-    if let Some(context) = &*CLIENT_CORE_CONTEXT.lock() {
-        if let Some([x, y]) =
+    if let Some(context) = &*CLIENT_CORE_CONTEXT.lock()
+        && let Some([x, y]) =
             context.foveation_center_for(Duration::from_nanos(target_timestamp_ns))
-        {
-            unsafe {
-                *out_center_x = x;
-                *out_center_y = y;
-            }
+    {
+        unsafe {
+            *out_center_x = x;
+            *out_center_y = y;
         }
     }
 }

@@ -453,9 +453,7 @@ impl StreamContext {
         // de-warp at the same point the encoder used, instead of collapsing to (0, 0).
         if let Some(static_config) = &self.config.foveated_encoding_config {
             let mut per_frame_config = static_config.clone();
-            if let Some([center_x, center_y]) =
-                self.core_context.foveation_center_for(timestamp)
-            {
+            if let Some([center_x, center_y]) = self.core_context.foveation_center_for(timestamp) {
                 per_frame_config.center_shift_x = center_x;
                 per_frame_config.center_shift_y = center_y;
             }
