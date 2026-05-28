@@ -563,6 +563,13 @@ pub fn foveated_encoding_shader_constants(
     let center_shift_aligned = (center_shift * edge_size_aligned / (edge_ratio * 2.)).ceil()
         * (edge_ratio * 2.)
         / edge_size_aligned;
+    // Keep the aligned center one foveation block inside the edge. At exactly ±1 the lo/hi
+    // bounds collapse and a_left/b_left/a_right/b_right/c_right divide by zero, producing NaN
+    // warp coefficients (gaze-tracked foveation can push the center all the way to the edge).
+    // `edge_ratio` and the negotiated resolution match the encoder, so this clamp is identical
+    // on both ends and encode/decode stay consistent.
+    let shift_limit = Vec2::ONE - edge_ratio * 2. / edge_size_aligned;
+    let center_shift_aligned = center_shift_aligned.clamp(-shift_limit, shift_limit);
 
     let foveation_scale = center_size_aligned + (1. - center_size_aligned) / edge_ratio;
 
@@ -641,6 +648,46 @@ mod tests {
         assert!((params.lo_bound.x + params.hi_bound.x - 1.0).abs() < 1e-4);
         assert!((params.lo_bound.y + params.hi_bound.y - 1.0).abs() < 1e-4);
         assert!(params.edge_ratio.x > 0.0 && params.edge_ratio.y > 0.0);
+    }
+
+    // Gaze-tracked foveation can drive the center all the way to (and past) the frustum edge.
+    // Without the aligned-shift clamp, center_shift_aligned hits exactly ±1, the lo/hi bounds
+    // collapse, and a_left/b_left/a_right/b_right/c_right divide by zero -> NaN/Inf -> black
+    // edge regions. Every warp coefficient must stay finite for any input shift.
+    #[test]
+    fn extreme_center_shift_stays_finite() {
+        for &(sx, sy) in &[(1.0, 1.0), (-1.0, -1.0), (1.0, -1.0), (5.0, -5.0)] {
+            let config = FoveatedEncodingConfig {
+                force_enable: false,
+                center_size_x: 0.4,
+                center_size_y: 0.35,
+                center_shift_x: sx,
+                center_shift_y: sy,
+                edge_ratio_x: 4.0,
+                edge_ratio_y: 5.0,
+                eye_tracked: alvr_session::settings_schema::Switch::Disabled,
+            };
+
+            let (_resolution, params) =
+                foveated_encoding_shader_constants(UVec2::new(2048, 2048), config);
+
+            for v in [
+                params.c1,
+                params.c2,
+                params.lo_bound,
+                params.hi_bound,
+                params.a_left,
+                params.b_left,
+                params.a_right,
+                params.b_right,
+                params.c_right,
+            ] {
+                assert!(
+                    v.is_finite(),
+                    "non-finite warp coeff at shift ({sx}, {sy}): {v:?}"
+                );
+            }
+        }
     }
 }
 

@@ -132,6 +132,10 @@ pub struct ConnectionContext {
     // switch and per-frame gaze presence — prevents the tracker from running for clients
     // whose runtime denies eye-gaze permission.
     client_eye_tracking_advertised: AtomicBool,
+    // True once the client has sent its first LocalViewParams. Until then `local_view_params`
+    // holds ViewParams::DUMMY, whose FOV (~114°) would mis-scale the gaze projection — so the
+    // FoveationTracker must not run against it.
+    local_view_params_received: AtomicBool,
 }
 
 pub fn create_recording_file(connection_context: &ConnectionContext, settings: &Settings) {
@@ -247,6 +251,7 @@ impl ServerCoreContext {
             pending_foveation_center: Mutex::new([0.0, 0.0]),
             applied_foveation_center: Mutex::new([0.0, 0.0]),
             client_eye_tracking_advertised: AtomicBool::new(false),
+            local_view_params_received: AtomicBool::new(false),
         });
 
         let webserver_runtime = Runtime::new().unwrap();

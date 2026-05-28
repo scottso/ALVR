@@ -245,8 +245,9 @@ pub struct VideoPacketHeader {
     // Normalized [-1, 1] foveation center the server used when warping this frame. Carried
     // per-frame so the client de-warp uses the exact same center the encoder did, regardless
     // of how stale the client's local gaze sample is. (0, 0) means lens-centered, which is
-    // what the server emits unless gaze-following foveated encoding is active.
-    #[serde(default)]
+    // what the server emits unless gaze-following foveated encoding is active. Always present:
+    // the stream socket uses bincode (positional encoding) and the handshake rejects mismatched
+    // protocol IDs, so there is no "missing field" case to default.
     pub foveation_center: [f32; 2],
 }
 

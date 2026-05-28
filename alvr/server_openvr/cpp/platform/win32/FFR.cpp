@@ -4,6 +4,8 @@
 #include "alvr_server/Utils.h"
 #include "alvr_server/bindings.h"
 
+#include <algorithm>
+
 using Microsoft::WRL::ComPtr;
 using namespace d3d_render_utils;
 
@@ -48,10 +50,22 @@ FoveationVars CalculateFoveationVars() {
     float edgeSizeXAligned = targetEyeWidth - centerSizeXAligned * targetEyeWidth;
     float edgeSizeYAligned = targetEyeHeight - centerSizeYAligned * targetEyeHeight;
 
-    float centerShiftXAligned = ceil(centerShiftX * edgeSizeXAligned / (edgeRatioX * 2.))
-        * (edgeRatioX * 2.) / edgeSizeXAligned;
-    float centerShiftYAligned = ceil(centerShiftY * edgeSizeYAligned / (edgeRatioY * 2.))
-        * (edgeRatioY * 2.) / edgeSizeYAligned;
+    // Clamp one foveation block inside the edge: at exactly ±1 the FFR shader's lo/hi bounds
+    // collapse to a divide-by-zero / NaN. Matches the client de-warp clamp.
+    float shiftLimitX = 1.f - edgeRatioX * 2.f / edgeSizeXAligned;
+    float shiftLimitY = 1.f - edgeRatioY * 2.f / edgeSizeYAligned;
+    float centerShiftXAligned = std::clamp(
+        (float)(ceil(centerShiftX * edgeSizeXAligned / (edgeRatioX * 2.)) * (edgeRatioX * 2.)
+                / edgeSizeXAligned),
+        -shiftLimitX,
+        shiftLimitX
+    );
+    float centerShiftYAligned = std::clamp(
+        (float)(ceil(centerShiftY * edgeSizeYAligned / (edgeRatioY * 2.)) * (edgeRatioY * 2.)
+                / edgeSizeYAligned),
+        -shiftLimitY,
+        shiftLimitY
+    );
 
     float foveationScaleX = (centerSizeXAligned + (1. - centerSizeXAligned) / edgeRatioX);
     float foveationScaleY = (centerSizeYAligned + (1. - centerSizeYAligned) / edgeRatioY);
@@ -150,10 +164,22 @@ void FFR::UpdateCenterShift(float centerShiftX, float centerShiftY) {
     float edgeSizeXAligned = targetEyeWidth - fovVars.centerSizeX * targetEyeWidth;
     float edgeSizeYAligned = targetEyeHeight - fovVars.centerSizeY * targetEyeHeight;
 
-    fovVars.centerShiftX = ceil(centerShiftX * edgeSizeXAligned / (edgeRatioX * 2.))
-        * (edgeRatioX * 2.) / edgeSizeXAligned;
-    fovVars.centerShiftY = ceil(centerShiftY * edgeSizeYAligned / (edgeRatioY * 2.))
-        * (edgeRatioY * 2.) / edgeSizeYAligned;
+    // Clamp one foveation block inside the edge: at exactly ±1 the FFR shader's lo/hi bounds
+    // collapse to a divide-by-zero / NaN. Matches the client de-warp clamp.
+    float shiftLimitX = 1.f - edgeRatioX * 2.f / edgeSizeXAligned;
+    float shiftLimitY = 1.f - edgeRatioY * 2.f / edgeSizeYAligned;
+    fovVars.centerShiftX = std::clamp(
+        (float)(ceil(centerShiftX * edgeSizeXAligned / (edgeRatioX * 2.)) * (edgeRatioX * 2.)
+                / edgeSizeXAligned),
+        -shiftLimitX,
+        shiftLimitX
+    );
+    fovVars.centerShiftY = std::clamp(
+        (float)(ceil(centerShiftY * edgeSizeYAligned / (edgeRatioY * 2.)) * (edgeRatioY * 2.)
+                / edgeSizeYAligned),
+        -shiftLimitY,
+        shiftLimitY
+    );
 
     UpdateBuffer(mContext.Get(), mFoveatedRenderingBuffer.Get(), &fovVars);
 }

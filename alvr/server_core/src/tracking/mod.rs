@@ -475,6 +475,8 @@ pub fn tracking_loop(
             //   - the eye_tracked sub-switch in settings,
             //   - the client's handshake-time advertisement (so a runtime that denied
             //     eye-gaze permission doesn't drive the encoder),
+            //   - the client having sent its first LocalViewParams (until then local_view_params
+            //     is ViewParams::DUMMY, whose FOV would mis-scale the gaze projection),
             //   - a usable per-frame gaze sample.
             // When the gate is closed, pending stays at whatever value it was last seeded
             // with (the static center from settings, set at stream start in connection.rs),
@@ -484,6 +486,9 @@ pub fn tracking_loop(
                 && let Switch::Enabled(eye_tracked_config) = &foveation_config.eye_tracked
                 && ctx
                     .client_eye_tracking_advertised
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                && ctx
+                    .local_view_params_received
                     .load(std::sync::atomic::Ordering::Relaxed)
                 && let Some(gaze) = tracking.face.eyes_combined
             {

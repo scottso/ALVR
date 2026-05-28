@@ -1242,6 +1242,8 @@ fn connection_pipeline(
                     }
                     ClientControlPacket::LocalViewParams(params) => {
                         *ctx.local_view_params.write() = params;
+                        ctx.local_view_params_received
+                            .store(true, std::sync::atomic::Ordering::Relaxed);
                         ctx.events_sender
                             .send(ServerCoreEvent::LocalViewParams(params))
                             .ok();
