@@ -282,7 +282,10 @@ mod tests {
         };
         let out = tracker.update(Quat::IDENTITY, degenerate, &cfg(100.0));
         assert!(out[0].is_finite() && out[1].is_finite(), "got {out:?}");
-        assert!(out[0].abs() < 1e-5 && out[1].abs() < 1e-5, "should hold center, got {out:?}");
+        assert!(
+            out[0].abs() < 1e-5 && out[1].abs() < 1e-5,
+            "should hold center, got {out:?}"
+        );
     }
 
     // The output must never reach exactly ±1: at the frustum edge the downstream warp math
@@ -293,8 +296,16 @@ mod tests {
         let fov = symmetric_fov(0.8);
         let extreme = Quat::from_euler(EulerRot::YXZ, 1.5, 0.0, 0.0);
         let out = tracker.update(extreme, fov, &cfg(100.0));
-        assert!(out[0].abs() <= MAX_CENTER_SHIFT + 1e-6, "x not clamped: {}", out[0]);
-        assert!(out[1].abs() <= MAX_CENTER_SHIFT + 1e-6, "y not clamped: {}", out[1]);
+        assert!(
+            out[0].abs() <= MAX_CENTER_SHIFT + 1e-6,
+            "x not clamped: {}",
+            out[0]
+        );
+        assert!(
+            out[1].abs() <= MAX_CENTER_SHIFT + 1e-6,
+            "y not clamped: {}",
+            out[1]
+        );
         assert!(
             (out[0].abs() - MAX_CENTER_SHIFT).abs() < 1e-4,
             "extreme yaw should saturate the x clamp, got {}",
