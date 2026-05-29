@@ -71,6 +71,9 @@ pub struct ClientCapabilities {
     pub prefer_10bit: bool,
     pub preferred_encoding_gamma: f32,
     pub prefer_hdr: bool,
+    // Advertised so the server can decide whether to recenter the encode warp on gaze. See
+    // VideoStreamingCapabilitiesExt for wire format.
+    pub eye_tracking: bool,
 }
 
 pub struct ClientCoreContext {
@@ -291,6 +294,21 @@ impl ClientCoreContext {
         }
 
         *global_view_params_lock
+    }
+
+    /// Returns the foveation warp center the server used when encoding this frame, in
+    /// normalized [-1, 1] coordinates. Returns `None` when no header is queued for
+    /// `timestamp` (frame dropped, or pre-A.4 server that doesn't fill the field yet —
+    /// serde's default skips it); the caller should fall back to its negotiated static
+    /// center in that case rather than assume lens-centered.
+    pub fn foveation_center_for(&self, timestamp: Duration) -> Option<[f32; 2]> {
+        for (ts, center) in &*self.connection_context.foveation_center_queue.lock() {
+            if *ts == timestamp {
+                return Some(*center);
+            }
+        }
+
+        None
     }
 
     pub fn report_submit(&self, timestamp: Duration, vsync_queue: Duration) {

@@ -23,9 +23,13 @@ pub const AUDIO: u16 = 2;
 pub const VIDEO: u16 = 3;
 pub const STATISTICS: u16 = 4;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct VideoStreamingCapabilitiesExt {
-    // Nothing for now
+    // Headset reports it can deliver per-eye gaze samples to the server (XR_EXT_eye_gaze
+    // or XR_FB_eye_tracking_social). Server uses this to decide whether gaze-following
+    // foveated encoding is worth attempting.
+    #[serde(default)]
+    pub eye_tracking: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -53,11 +57,11 @@ impl VideoStreamingCapabilities {
     }
 
     pub fn ext(&self) -> Result<VideoStreamingCapabilitiesExt> {
-        let _ext_json = json::from_str::<json::Value>(&self.ext_str)?;
-
-        // decode values here
-
-        Ok(VideoStreamingCapabilitiesExt {})
+        // Old clients send an empty ext_str — treat that as defaults.
+        if self.ext_str.is_empty() {
+            return Ok(VideoStreamingCapabilitiesExt::default());
+        }
+        Ok(json::from_str(&self.ext_str)?)
     }
 }
 
@@ -238,6 +242,13 @@ pub struct VideoPacketHeader {
     pub timestamp: Duration,
     pub global_view_params: [ViewParams; 2],
     pub is_idr: bool,
+    // Normalized [-1, 1] foveation center the server used when warping this frame. Carried
+    // per-frame so the client de-warp uses the exact same center the encoder did, regardless
+    // of how stale the client's local gaze sample is. (0, 0) means lens-centered, which is
+    // what the server emits unless gaze-following foveated encoding is active. Always present:
+    // the stream socket uses bincode (positional encoding) and the handshake rejects mismatched
+    // protocol IDs, so there is no "missing field" case to default.
+    pub foveation_center: [f32; 2],
 }
 
 #[derive(Serialize, Deserialize)]

@@ -573,6 +573,24 @@ fn connection_pipeline(
 
     let initial_settings = session_manager_lock.settings().clone();
 
+    // Record the client's eye-tracking advertisement so the tracking loop can gate on it,
+    // and seed pending/applied foveation centers with the static config — both the encoder
+    // (via FFI pull on its own thread) and the wire header read from these, so an unseeded
+    // state would let a stale value from a prior session bleed into this one.
+    let client_ext_caps = streaming_caps.ext().unwrap_or_default();
+    ctx.client_eye_tracking_advertised.store(
+        client_ext_caps.eye_tracking,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    let static_foveation_center =
+        if let Switch::Enabled(config) = &initial_settings.video.foveated_encoding {
+            [config.center_shift_x, config.center_shift_y]
+        } else {
+            [0.0, 0.0]
+        };
+    *ctx.pending_foveation_center.lock() = static_foveation_center;
+    *ctx.applied_foveation_center.lock() = static_foveation_center;
+
     fn get_view_res(config: FrameSize, default_res: UVec2) -> UVec2 {
         let res = match config {
             FrameSize::Scale(scale) => default_res.as_vec2() * scale,
@@ -1223,6 +1241,9 @@ fn connection_pipeline(
                         ctx.events_sender.send(ServerCoreEvent::RequestIDR).ok();
                     }
                     ClientControlPacket::LocalViewParams(params) => {
+                        *ctx.local_view_params.write() = params;
+                        ctx.local_view_params_received
+                            .store(true, std::sync::atomic::Ordering::Relaxed);
                         ctx.events_sender
                             .send(ServerCoreEvent::LocalViewParams(params))
                             .ok();

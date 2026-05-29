@@ -64,6 +64,12 @@ public:
 
     ComPtr<ID3D11Texture2D> GetTexture();
 
+    // Forwards to FFR::UpdateCenterShift if FFE is enabled this session; no-op otherwise.
+    // Called from CEncoder::CopyToStaging on the compositor thread, immediately before
+    // RenderFrame() dispatches the FFR pixel shader — same thread for both the cbuffer
+    // write and the dispatch, so the D3D11 immediate context never crosses threads.
+    void UpdateFoveationCenter(float centerShiftX, float centerShiftY);
+
 private:
     std::shared_ptr<CD3DRender> m_pD3DRender;
     ComPtr<ID3D11Texture2D> m_pStagingTexture;

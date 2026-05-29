@@ -1,18 +1,19 @@
 use super::{GraphicsContext, MAX_PUSH_CONSTANTS_SIZE, staging::StagingRenderer};
 use alvr_common::{
     ViewParams,
-    glam::{self, Mat4, UVec2, Vec3, Vec4},
+    glam::{self, Mat4, UVec2, Vec2, Vec3, Vec4},
 };
 use alvr_session::{FoveatedEncodingConfig, PassthroughMode, UpscalingConfig};
 use std::{ffi::c_void, iter, mem, rc::Rc};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, Color, ColorTargetState, ColorWrites,
-    FragmentState, LoadOp, PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState,
-    PrimitiveTopology, PushConstantRange, RenderPass, RenderPassColorAttachment,
-    RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor, SamplerBindingType,
-    SamplerDescriptor, ShaderStages, StoreOp, TextureSampleType, TextureView,
-    TextureViewDescriptor, TextureViewDimension, VertexState, include_wgsl,
+    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
+    BufferDescriptor, BufferUsages, Color, ColorTargetState, ColorWrites, FragmentState, LoadOp,
+    PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology,
+    PushConstantRange, RenderPass, RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline,
+    RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor, ShaderStages, StoreOp,
+    TextureSampleType, TextureView, TextureViewDescriptor, TextureViewDimension, VertexState,
+    include_wgsl,
 };
 
 const FLOAT_SIZE: u32 = mem::size_of::<f32>() as u32;
@@ -34,6 +35,64 @@ const _: () = assert!(
     "Push constants size exceeds the maximum size"
 );
 
+// Uniform-buffer layout for the foveation warp shader. Per-frame updatable so the warp center
+// can follow gaze. Field order must match the FoveationParams struct in stream.wgsl. Padded to
+// 96 bytes (multiple of 16) for WGSL uniform layout rules.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct FoveationParams {
+    pub view_size_ratio: Vec2,
+    pub edge_ratio: Vec2,
+    pub c1: Vec2,
+    pub c2: Vec2,
+    pub lo_bound: Vec2,
+    pub hi_bound: Vec2,
+    pub a_left: Vec2,
+    pub b_left: Vec2,
+    pub a_right: Vec2,
+    pub b_right: Vec2,
+    pub c_right: Vec2,
+    _pad: Vec2,
+}
+
+const FOVEATION_PARAMS_SIZE: u64 = mem::size_of::<FoveationParams>() as u64;
+
+impl FoveationParams {
+    fn to_bytes(self) -> [u8; FOVEATION_PARAMS_SIZE as usize] {
+        let floats: [f32; 24] = [
+            self.view_size_ratio.x,
+            self.view_size_ratio.y,
+            self.edge_ratio.x,
+            self.edge_ratio.y,
+            self.c1.x,
+            self.c1.y,
+            self.c2.x,
+            self.c2.y,
+            self.lo_bound.x,
+            self.lo_bound.y,
+            self.hi_bound.x,
+            self.hi_bound.y,
+            self.a_left.x,
+            self.a_left.y,
+            self.b_left.x,
+            self.b_left.y,
+            self.a_right.x,
+            self.a_right.y,
+            self.b_right.x,
+            self.b_right.y,
+            self.c_right.x,
+            self.c_right.y,
+            0.0,
+            0.0,
+        ];
+        let mut bytes = [0u8; FOVEATION_PARAMS_SIZE as usize];
+        for (i, f) in floats.iter().enumerate() {
+            bytes[i * 4..(i + 1) * 4].copy_from_slice(&f.to_le_bytes());
+        }
+        bytes
+    }
+}
+
 pub struct StreamViewParams {
     pub swapchain_index: u32,
     pub input_view_params: ViewParams,
@@ -51,6 +110,12 @@ pub struct StreamRenderer {
     staging_renderer: StagingRenderer,
     pipeline: RenderPipeline,
     views_objects: [ViewObjects; 2],
+    foveation_buffer: Buffer,
+    // Caches the bytes most recently written to `foveation_buffer`. The per-frame override
+    // in stream_renderer's caller recomputes params every frame; when the server isn't doing
+    // gaze tracking those params are bitwise identical to the previous frame, so the
+    // wgpu queue.write_buffer round-trip is a no-op we can skip.
+    foveation_cache: std::cell::Cell<[u8; FOVEATION_PARAMS_SIZE as usize]>,
 }
 
 impl StreamRenderer {
@@ -91,6 +156,16 @@ impl StreamRenderer {
                     ty: BindingType::Sampler(SamplerBindingType::Filtering),
                     count: None,
                 },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -103,15 +178,26 @@ impl StreamRenderer {
             ("ENCODING_GAMMA", encoding_gamma.into()),
         ]);
 
-        let staging_resolution = if let Some(foveated_encoding) = foveated_encoding {
-            let (staging_resolution, ffe_constants) =
-                foveated_encoding_shader_constants(base_view_resolution, foveated_encoding);
-            constants.extend(ffe_constants);
+        let (staging_resolution, initial_foveation_params) =
+            if let Some(foveated_encoding) = foveated_encoding {
+                let (staging_resolution, params) =
+                    foveated_encoding_shader_constants(base_view_resolution, foveated_encoding);
+                constants.push(("ENABLE_FFE", true.into()));
 
-            staging_resolution
-        } else {
-            base_view_resolution
-        };
+                (staging_resolution, params)
+            } else {
+                (base_view_resolution, FoveationParams::default())
+            };
+
+        let foveation_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("foveation_params"),
+            size: FOVEATION_PARAMS_SIZE,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        context
+            .queue
+            .write_buffer(&foveation_buffer, 0, &initial_foveation_params.to_bytes());
 
         if let Some(upscaling) = upscaling {
             constants.extend([
@@ -196,6 +282,10 @@ impl StreamRenderer {
                         binding: 1,
                         resource: BindingResource::Sampler(&sampler),
                     },
+                    BindGroupEntry {
+                        binding: 2,
+                        resource: foveation_buffer.as_entire_binding(),
+                    },
                 ],
             });
 
@@ -238,7 +328,25 @@ impl StreamRenderer {
             staging_renderer,
             pipeline,
             views_objects: view_objects.try_into().unwrap(),
+            foveation_buffer,
+            foveation_cache: std::cell::Cell::new(initial_foveation_params.to_bytes()),
         }
+    }
+
+    /// Update the per-frame foveation warp parameters. Has no effect when foveated encoding is
+    /// disabled (the shader skips the warp path entirely via the `ENABLE_FFE` override). The
+    /// caller pumps this every frame; we skip the GPU upload when the bytes haven't changed
+    /// since the last write, which is the common case for static-foveation streams (the server
+    /// reports the same center every frame).
+    pub fn set_foveation_params(&self, params: FoveationParams) {
+        let bytes = params.to_bytes();
+        if self.foveation_cache.get() == bytes {
+            return;
+        }
+        self.foveation_cache.set(bytes);
+        self.context
+            .queue
+            .write_buffer(&self.foveation_buffer, 0, &bytes);
     }
 
     /// # Safety
@@ -440,7 +548,7 @@ fn set_passthrough_push_constants(render_pass: &mut RenderPass, config: Option<&
 pub fn foveated_encoding_shader_constants(
     expanded_view_resolution: UVec2,
     config: FoveatedEncodingConfig,
-) -> (UVec2, Vec<(&'static str, f64)>) {
+) -> (UVec2, FoveationParams) {
     let view_resolution = expanded_view_resolution.as_vec2();
 
     let center_size = glam::vec2(config.center_size_x, config.center_size_y);
@@ -455,6 +563,13 @@ pub fn foveated_encoding_shader_constants(
     let center_shift_aligned = (center_shift * edge_size_aligned / (edge_ratio * 2.)).ceil()
         * (edge_ratio * 2.)
         / edge_size_aligned;
+    // Keep the aligned center one foveation block inside the edge. At exactly ±1 the lo/hi
+    // bounds collapse and a_left/b_left/a_right/b_right/c_right divide by zero, producing NaN
+    // warp coefficients (gaze-tracked foveation can push the center all the way to the edge).
+    // `edge_ratio` and the negotiated resolution match the encoder, so this clamp is identical
+    // on both ends and encode/decode stay consistent.
+    let shift_limit = Vec2::ONE - edge_ratio * 2. / edge_size_aligned;
+    let center_shift_aligned = center_shift_aligned.clamp(-shift_limit, shift_limit);
 
     let foveation_scale = center_size_aligned + (1. - center_size_aligned) / edge_ratio;
 
@@ -485,36 +600,95 @@ pub fn foveated_encoding_shader_constants(
     let c_right = (c2 * edge_ratio - c2) * (c1 - hi_bound_c + c2 * hi_bound_c)
         / (edge_ratio * (1. - hi_bound_c) * (1. - hi_bound_c));
 
-    let constants = [
-        ("ENABLE_FFE", 1.),
-        ("VIEW_WIDTH_RATIO", view_ratio_aligned.x),
-        ("VIEW_HEIGHT_RATIO", view_ratio_aligned.y),
-        ("EDGE_X_RATIO", edge_ratio.x),
-        ("EDGE_Y_RATIO", edge_ratio.y),
-        ("C1_X", c1.x),
-        ("C1_Y", c1.y),
-        ("C2_X", c2.x),
-        ("C2_Y", c2.y),
-        ("LO_BOUND_X", lo_bound.x),
-        ("LO_BOUND_Y", lo_bound.y),
-        ("HI_BOUND_X", hi_bound.x),
-        ("HI_BOUND_Y", hi_bound.y),
-        ("A_LEFT_X", a_left.x),
-        ("A_LEFT_Y", a_left.y),
-        ("B_LEFT_X", b_left.x),
-        ("B_LEFT_Y", b_left.y),
-        ("A_RIGHT_X", a_right.x),
-        ("A_RIGHT_Y", a_right.y),
-        ("B_RIGHT_X", b_right.x),
-        ("B_RIGHT_Y", b_right.y),
-        ("C_RIGHT_X", c_right.x),
-        ("C_RIGHT_Y", c_right.y),
-    ]
-    .iter()
-    .map(|(k, v)| (*k, *v as f64))
-    .collect();
+    let params = FoveationParams {
+        view_size_ratio: view_ratio_aligned,
+        edge_ratio,
+        c1,
+        c2,
+        lo_bound,
+        hi_bound,
+        a_left,
+        b_left,
+        a_right,
+        b_right,
+        c_right,
+        _pad: Vec2::ZERO,
+    };
 
-    (optimized_view_resolution_aligned.as_uvec2(), constants)
+    (optimized_view_resolution_aligned.as_uvec2(), params)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alvr_session::FoveatedEncodingConfig;
+
+    // Regression guard: with center_shift_x/y at (0, 0) the new uniform-driven path must produce
+    // the same warp coefficients that used to be baked into the shader as override constants.
+    // If this drifts, fixed-foveation users will see image distortion.
+    #[test]
+    fn zero_center_shift_matches_legacy_constants() {
+        let config = FoveatedEncodingConfig {
+            force_enable: false,
+            center_size_x: 0.4,
+            center_size_y: 0.35,
+            center_shift_x: 0.0,
+            center_shift_y: 0.0,
+            edge_ratio_x: 4.0,
+            edge_ratio_y: 5.0,
+            eye_tracked: alvr_session::settings_schema::Switch::Disabled,
+        };
+
+        let (resolution, params) =
+            foveated_encoding_shader_constants(UVec2::new(2048, 2048), config);
+
+        assert_eq!(resolution.x % 32, 0);
+        assert_eq!(resolution.y % 32, 0);
+        // With centered shift, the left/right and lo/hi bounds are symmetric around 0.5.
+        assert!((params.lo_bound.x + params.hi_bound.x - 1.0).abs() < 1e-4);
+        assert!((params.lo_bound.y + params.hi_bound.y - 1.0).abs() < 1e-4);
+        assert!(params.edge_ratio.x > 0.0 && params.edge_ratio.y > 0.0);
+    }
+
+    // Gaze-tracked foveation can drive the center all the way to (and past) the frustum edge.
+    // Without the aligned-shift clamp, center_shift_aligned hits exactly ±1, the lo/hi bounds
+    // collapse, and a_left/b_left/a_right/b_right/c_right divide by zero -> NaN/Inf -> black
+    // edge regions. Every warp coefficient must stay finite for any input shift.
+    #[test]
+    fn extreme_center_shift_stays_finite() {
+        for &(sx, sy) in &[(1.0, 1.0), (-1.0, -1.0), (1.0, -1.0), (5.0, -5.0)] {
+            let config = FoveatedEncodingConfig {
+                force_enable: false,
+                center_size_x: 0.4,
+                center_size_y: 0.35,
+                center_shift_x: sx,
+                center_shift_y: sy,
+                edge_ratio_x: 4.0,
+                edge_ratio_y: 5.0,
+                eye_tracked: alvr_session::settings_schema::Switch::Disabled,
+            };
+
+            let (_resolution, params) =
+                foveated_encoding_shader_constants(UVec2::new(2048, 2048), config);
+
+            for v in [
+                params.c1,
+                params.c2,
+                params.lo_bound,
+                params.hi_bound,
+                params.a_left,
+                params.b_left,
+                params.a_right,
+                params.b_right,
+                params.c_right,
+            ] {
+                assert!(
+                    v.is_finite(),
+                    "non-finite warp coeff at shift ({sx}, {sy}): {v:?}"
+                );
+            }
+        }
+    }
 }
 
 pub fn compute_target_view_resolution(

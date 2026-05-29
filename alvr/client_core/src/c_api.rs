@@ -53,6 +53,7 @@ pub struct AlvrClientCapabilities {
     prefer_10bit: bool,
     preferred_encoding_gamma: f32,
     prefer_hdr: bool,
+    eye_tracking: bool,
 }
 
 #[repr(u8)]
@@ -224,6 +225,7 @@ pub extern "C" fn alvr_initialize(capabilities: AlvrClientCapabilities) {
         prefer_10bit: capabilities.prefer_10bit,
         preferred_encoding_gamma: capabilities.preferred_encoding_gamma,
         prefer_hdr: capabilities.prefer_hdr,
+        eye_tracking: capabilities.eye_tracking,
     };
     *CLIENT_CORE_CONTEXT.lock() = Some(ClientCoreContext::new(capabilities));
 }
@@ -562,6 +564,30 @@ pub extern "C" fn alvr_report_compositor_start(
     }
 }
 
+/// Writes the foveation warp center the server used when encoding the frame with the given
+/// timestamp into `out_center_x` / `out_center_y`, in normalized [-1, 1] coords. The out
+/// pointers are left unmodified when no header is queued for that timestamp (dropped frame
+/// or pre-A.4 server), so callers must pre-initialize them to a sensible fallback —
+/// typically the negotiated static `FoveationSettings.center_shift_{x,y}`. Intended for
+/// C-ABI clients (e.g. the AVP app) that drive their own foveation de-warp shader and need
+/// the per-frame center to match what the encoder applied.
+#[unsafe(no_mangle)]
+pub extern "C" fn alvr_get_foveation_center(
+    target_timestamp_ns: u64,
+    out_center_x: *mut f32,
+    out_center_y: *mut f32,
+) {
+    if let Some(context) = &*CLIENT_CORE_CONTEXT.lock()
+        && let Some([x, y]) =
+            context.foveation_center_for(Duration::from_nanos(target_timestamp_ns))
+    {
+        unsafe {
+            *out_center_x = x;
+            *out_center_y = y;
+        }
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn alvr_report_submit(target_timestamp_ns: u64, vsync_queue_ns: u64) {
     if let Some(context) = &*CLIENT_CORE_CONTEXT.lock() {
@@ -691,6 +717,9 @@ pub extern "C" fn alvr_start_stream_opengl(config: AlvrStreamConfig) {
         center_shift_y: config.foveation_center_shift_y,
         edge_ratio_x: config.foveation_edge_ratio_x,
         edge_ratio_y: config.foveation_edge_ratio_y,
+        // Gaze-following encoding is server-controlled; C-ABI callers receive a frame that's
+        // already warped, so this knob is meaningless on the client side.
+        eye_tracked: alvr_session::settings_schema::Switch::Disabled,
     });
     let upscaling = config.enable_upscaling.then_some(UpscalingConfig {
         edge_direction: config.upscaling_edge_direction,

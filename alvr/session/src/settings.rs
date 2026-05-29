@@ -452,6 +452,36 @@ pub struct ClientsideFoveationConfig {
     #[schema(strings(display_name = "Foveation offset"))]
     #[schema(gui(slider(min = -45.0, max = 45.0, step = 0.1)), suffix = "°")]
     pub vertical_offset_deg: f32,
+
+    #[schema(strings(
+        display_name = "Eye-tracked foveation",
+        help = "Drive the headset's variable-rate shading from gaze (XR_META_foveation_eye_tracked). Requires a headset with eye tracking. Silently ignored otherwise."
+    ))]
+    pub eye_tracked: bool,
+}
+
+#[derive(SettingsSchema, Serialize, Deserialize, Clone, PartialEq)]
+pub struct EyeTrackedFoveationConfig {
+    #[schema(strings(
+        display_name = "Prediction window",
+        help = "How far ahead to extrapolate gaze to hide network + encode + decode latency."
+    ))]
+    #[schema(gui(slider(min = 0, max = 100, step = 1)), suffix = "ms")]
+    pub prediction_ms: u32,
+
+    #[schema(strings(
+        display_name = "Smoothing",
+        help = "Low-pass on the predicted center. 0 = no smoothing (snappy but noisy), 1 = frozen."
+    ))]
+    #[schema(gui(slider(min = 0.0, max = 1.0, step = 0.01)))]
+    pub smoothing_alpha: f32,
+
+    #[schema(strings(
+        display_name = "Saccade fallback threshold",
+        help = "Angular gaze velocity above which the warp center snaps back to the lens axis. Foveation during a saccade is invisible to the viewer, and overshoot during a saccade is the worst-case artifact."
+    ))]
+    #[schema(gui(slider(min = 1.0, max = 50.0, step = 1.0)), suffix = "rad/s")]
+    pub saccade_velocity_threshold: f32,
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone, PartialEq)]
@@ -489,6 +519,12 @@ pub struct FoveatedEncodingConfig {
     #[schema(gui(slider(min = 1.0, max = 10.0, step = 1.0)))]
     #[schema(flag = "steamvr-restart")]
     pub edge_ratio_y: f32,
+
+    #[schema(strings(
+        display_name = "Gaze-following center",
+        help = "Recenter the encode warp on the user's fixation point each frame. Requires a headset with eye tracking; falls back to the static center above otherwise."
+    ))]
+    pub eye_tracked: Switch<EyeTrackedFoveationConfig>,
 }
 
 #[repr(C)]
@@ -1896,6 +1932,14 @@ pub fn session_settings_default() -> SettingsDefault {
                     center_shift_y: 0.1,
                     edge_ratio_x: 4.,
                     edge_ratio_y: 5.,
+                    eye_tracked: SwitchDefault {
+                        enabled: false,
+                        content: EyeTrackedFoveationConfigDefault {
+                            prediction_ms: 40,
+                            smoothing_alpha: 0.3,
+                            saccade_velocity_threshold: 8.0,
+                        },
+                    },
                 },
             },
             clientside_foveation: SwitchDefault {
@@ -1915,6 +1959,7 @@ pub fn session_settings_default() -> SettingsDefault {
                         variant: ClientsideFoveationModeDefaultVariant::Dynamic,
                     },
                     vertical_offset_deg: 0.0,
+                    eye_tracked: true,
                 },
             },
             force_software_decoder: false,

@@ -9,6 +9,7 @@ pub use vmc::*;
 use crate::{
     ConnectionContext, SESSION_MANAGER, ServerCoreEvent,
     connection::STREAMING_RECV_TIMEOUT,
+    foveation::FoveationTracker,
     hand_gestures::{self, HAND_GESTURE_BUTTON_SET, HandGestureManager},
     input_mapping::ButtonMappingManager,
 };
@@ -384,6 +385,8 @@ pub fn tracking_loop(
         .into_option()
         .and_then(|config| VMCSink::new(config).ok());
 
+    let mut foveation_tracker = FoveationTracker::new();
+
     while is_streaming() {
         let data = match tracking_receiver.recv(STREAMING_RECV_TIMEOUT) {
             Ok(tracking) => tracking,
@@ -465,6 +468,33 @@ pub fn tracking_loop(
 
             if let Some(sink) = &mut face_tracking_sink {
                 sink.send_tracking(&tracking.face);
+            }
+
+            // Gaze-following foveated encoding. Writes to pending_foveation_center; the
+            // C++ encoder thread pulls from there each frame. Gated on:
+            //   - the eye_tracked sub-switch in settings,
+            //   - the client's handshake-time advertisement (so a runtime that denied
+            //     eye-gaze permission doesn't drive the encoder),
+            //   - the client having sent its first LocalViewParams (until then local_view_params
+            //     is ViewParams::DUMMY, whose FOV would mis-scale the gaze projection),
+            //   - a usable per-frame gaze sample.
+            // When the gate is closed, pending stays at whatever value it was last seeded
+            // with (the static center from settings, set at stream start in connection.rs),
+            // so the encoder keeps using fixed foveation.
+            let video_settings = &session_manager_lock.settings().video;
+            if let Switch::Enabled(foveation_config) = &video_settings.foveated_encoding
+                && let Switch::Enabled(eye_tracked_config) = &foveation_config.eye_tracked
+                && ctx
+                    .client_eye_tracking_advertised
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                && ctx
+                    .local_view_params_received
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                && let Some(gaze) = tracking.face.eyes_combined
+            {
+                let fov = ctx.local_view_params.read()[0].fov;
+                let center = foveation_tracker.update(gaze, fov, eye_tracked_config);
+                *ctx.pending_foveation_center.lock() = center;
             }
 
             if session_manager_lock.settings().extra.logging.log_tracking {

@@ -468,6 +468,30 @@ pub extern "C" fn shutdown_driver() {
     SERVER_CORE_CONTEXT.write().take();
 }
 
+// C++ encoder thread pulls the latest gaze-derived foveation center just before it dispatches
+// the FFR warp. Same thread does the cbuffer/push-constant write AND the dispatch — no
+// cross-thread D3D11 / Vulkan calls. Writes (0, 0) if the core context isn't up yet.
+extern "C" fn get_pending_foveation_center(out_x: *mut f32, out_y: *mut f32) {
+    let center = SERVER_CORE_CONTEXT
+        .read()
+        .as_ref()
+        .map(|ctx| ctx.get_pending_foveation_center())
+        .unwrap_or([0.0, 0.0]);
+    unsafe {
+        *out_x = center[0];
+        *out_y = center[1];
+    }
+}
+
+// C++ encoder thread publishes the center it actually wrote to the FFR cbuffer / push
+// constants for the frame it's about to encode. The Rust NAL header builder reads from
+// here so the wire-conveyed center can never diverge from what the warp dispatch used.
+extern "C" fn set_applied_foveation_center(x: f32, y: f32) {
+    if let Some(context) = &*SERVER_CORE_CONTEXT.read() {
+        context.set_applied_foveation_center(x, y);
+    }
+}
+
 /// This is the SteamVR/OpenVR entry point
 /// # Safety
 #[unsafe(no_mangle)]
@@ -531,6 +555,8 @@ pub unsafe extern "C" fn HmdDriverFactory(
             HapticsSend = Some(send_haptics);
             SetVideoConfigNals = Some(set_video_config_nals);
             VideoSend = Some(send_video);
+            GetPendingFoveationCenter = Some(get_pending_foveation_center);
+            SetAppliedFoveationCenter = Some(set_applied_foveation_center);
             GetDynamicEncoderParams = Some(get_dynamic_encoder_params);
             ReportComposed = Some(report_composed);
             ReportPresent = Some(report_present);

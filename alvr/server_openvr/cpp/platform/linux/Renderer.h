@@ -167,6 +167,15 @@ public:
         m_constantEntries = std::move(entries);
     }
 
+    // Reserve a push-constant range. The caller-owned buffer at `data` (size `size`) is read
+    // at each Render() call, so writes by other threads land in subsequent frames without
+    // needing to rebuild the pipeline. Used by FrameRender to push the per-frame foveation
+    // center.
+    void SetPushConstants(const void* data, uint32_t size) {
+        m_pushConstantData = data;
+        m_pushConstantSize = size;
+    }
+
 private:
     void Build();
     void Render(VkImageView in, VkImageView out, VkRect2D outSize);
@@ -176,6 +185,8 @@ private:
     const void* m_constant = nullptr;
     uint32_t m_constantSize = 0;
     std::vector<VkSpecializationMapEntry> m_constantEntries;
+    const void* m_pushConstantData = nullptr;
+    uint32_t m_pushConstantSize = 0;
     VkPipeline m_pipeline = VK_NULL_HANDLE;
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
 

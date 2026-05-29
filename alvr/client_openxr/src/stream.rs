@@ -1,4 +1,5 @@
 use crate::{
+    extra_extensions,
     graphics::{self, ProjectionLayerAlphaConfig, ProjectionLayerBuilder},
     interaction::{self, InteractionContext, InteractionSourcesConfig},
 };
@@ -139,13 +140,37 @@ impl StreamContext {
                 }
             };
 
-            xr_session
-                .create_foveation_profile(Some(xr::FoveationLevelProfile {
-                    level: xr::FoveationLevelFB::from_raw(level as i32),
-                    vertical_offset: config.vertical_offset_deg,
-                    dynamic: xr::FoveationDynamicFB::from_raw(dynamic as i32),
-                }))
-                .ok()
+            let xr_level = xr::FoveationLevelFB::from_raw(level as i32);
+            let xr_dynamic = xr::FoveationDynamicFB::from_raw(dynamic as i32);
+
+            // Prefer the eye-tracked profile when both the runtime supports it AND the user
+            // hasn't opted out via settings. Falls back to the static FB profile on headsets
+            // without the extension or if creation fails (some runtimes advertise the
+            // extension but reject the chained struct under certain conditions like
+            // calibration loss at session start).
+            let want_eye_tracked =
+                config.eye_tracked && xr_exts.meta_foveation_eye_tracked.is_some();
+            let eye_tracked = want_eye_tracked
+                .then(|| {
+                    extra_extensions::create_eye_tracked_profile(
+                        &xr_session,
+                        xr_level,
+                        config.vertical_offset_deg,
+                        xr_dynamic,
+                    )
+                    .ok()
+                })
+                .flatten();
+
+            eye_tracked.or_else(|| {
+                xr_session
+                    .create_foveation_profile(Some(xr::FoveationLevelProfile {
+                        level: xr_level,
+                        vertical_offset: config.vertical_offset_deg,
+                        dynamic: xr_dynamic,
+                    }))
+                    .ok()
+            })
         } else {
             None
         };
@@ -418,6 +443,25 @@ impl StreamContext {
             ];
 
             openxr_display_time = vsync_time;
+        }
+
+        // Update the de-warp shader with the foveation center the server used when encoding
+        // this specific frame. Without this, gaze-following encoded video would look
+        // distorted because the de-warp assumes a different (typically static) center than
+        // the encoder used. When no per-frame header is queued (dropped frame or pre-A.4
+        // server) we keep the negotiated static center_shift so non-gaze-following streams
+        // de-warp at the same point the encoder used, instead of collapsing to (0, 0).
+        if let Some(static_config) = &self.config.foveated_encoding_config {
+            let mut per_frame_config = static_config.clone();
+            if let Some([center_x, center_y]) = self.core_context.foveation_center_for(timestamp) {
+                per_frame_config.center_shift_x = center_x;
+                per_frame_config.center_shift_y = center_y;
+            }
+            let (_resolution, params) = alvr_graphics::foveated_encoding_shader_constants(
+                self.config.view_resolution,
+                per_frame_config,
+            );
+            self.renderer.set_foveation_params(params);
         }
 
         self.renderer.render(

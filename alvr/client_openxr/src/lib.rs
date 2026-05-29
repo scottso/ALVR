@@ -227,6 +227,7 @@ pub fn entry_point() {
     selected_exts.khr_convert_timespec_time = true;
     selected_exts.khr_opengl_es_enable = true;
     selected_exts.meta_body_tracking_full_body = true;
+    selected_exts.meta_foveation_eye_tracked = true;
     selected_exts.meta_simultaneous_hands_and_controllers = true;
     selected_exts.meta_detached_controllers = true;
     selected_exts.other = [
@@ -342,6 +343,8 @@ pub fn entry_point() {
             prefer_10bit: false,
             preferred_encoding_gamma: 1.0,
             prefer_hdr: false,
+            eye_tracking: selected_exts.ext_eye_gaze_interaction
+                || selected_exts.fb_eye_tracking_social,
         };
         let core_context = Arc::new(ClientCoreContext::new(capabilities));
 

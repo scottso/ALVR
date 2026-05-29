@@ -892,3 +892,9 @@ void FrameRender::GetEncodingResolution(uint32_t* width, uint32_t* height) {
         *height = Settings::Instance().m_renderHeight;
     }
 }
+
+void FrameRender::UpdateFoveationCenter(float centerShiftX, float centerShiftY) {
+    if (enableFFE && m_ffr) {
+        m_ffr->UpdateCenterShift(centerShiftX, centerShiftY);
+    }
+}

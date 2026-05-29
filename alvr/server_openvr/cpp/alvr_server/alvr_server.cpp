@@ -210,6 +210,8 @@ void (*LogPeriodically)(const char* tag, const char* stringPtr);
 void (*DriverReadyIdle)(bool setDefaultChaprone);
 void (*SetVideoConfigNals)(const unsigned char* configBuffer, int len, int codec);
 void (*VideoSend)(unsigned long long targetTimestampNs, unsigned char* buf, int len, bool isIdr);
+void (*GetPendingFoveationCenter)(float* centerX, float* centerY);
+void (*SetAppliedFoveationCenter)(float centerX, float centerY);
 void (*HapticsSend)(unsigned long long path, float duration_s, float frequency, float amplitude);
 void (*ShutdownRuntime)();
 unsigned long long (*PathStringToHash)(const char* path);

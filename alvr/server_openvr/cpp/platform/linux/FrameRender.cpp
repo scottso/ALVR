@@ -3,6 +3,7 @@
 #include "alvr_server/Settings.h"
 #include "alvr_server/bindings.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 
@@ -124,10 +125,22 @@ void FrameRender::setupFoveatedRendering() {
     float edgeSizeXAligned = targetEyeWidth - centerSizeXAligned * targetEyeWidth;
     float edgeSizeYAligned = targetEyeHeight - centerSizeYAligned * targetEyeHeight;
 
-    float centerShiftXAligned = ceil(centerShiftX * edgeSizeXAligned / (edgeRatioX * 2.))
-        * (edgeRatioX * 2.) / edgeSizeXAligned;
-    float centerShiftYAligned = ceil(centerShiftY * edgeSizeYAligned / (edgeRatioY * 2.))
-        * (edgeRatioY * 2.) / edgeSizeYAligned;
+    // Clamp one foveation block inside the edge: at exactly ±1 the FFR shader's lo/hi bounds
+    // collapse to a divide-by-zero / NaN (see ffr.comp). Matches the client de-warp clamp.
+    float shiftLimitX = 1.f - edgeRatioX * 2.f / edgeSizeXAligned;
+    float shiftLimitY = 1.f - edgeRatioY * 2.f / edgeSizeYAligned;
+    float centerShiftXAligned = std::clamp(
+        (float)(ceil(centerShiftX * edgeSizeXAligned / (edgeRatioX * 2.)) * (edgeRatioX * 2.)
+                / edgeSizeXAligned),
+        -shiftLimitX,
+        shiftLimitX
+    );
+    float centerShiftYAligned = std::clamp(
+        (float)(ceil(centerShiftY * edgeSizeYAligned / (edgeRatioY * 2.)) * (edgeRatioY * 2.)
+                / edgeSizeYAligned),
+        -shiftLimitY,
+        shiftLimitY
+    );
 
     float foveationScaleX = (centerSizeXAligned + (1. - centerSizeXAligned) / edgeRatioX);
     float foveationScaleY = (centerSizeYAligned + (1. - centerSizeYAligned) / edgeRatioY);
@@ -157,17 +170,67 @@ void FrameRender::setupFoveatedRendering() {
     ENTRY(eyeHeightRatio, eyeHeightRatioAligned);
     ENTRY(centerSizeX, centerSizeXAligned);
     ENTRY(centerSizeY, centerSizeYAligned);
-    ENTRY(centerShiftX, centerShiftXAligned);
-    ENTRY(centerShiftY, centerShiftYAligned);
     ENTRY(edgeRatioX, edgeRatioX);
     ENTRY(edgeRatioY, edgeRatioY);
 #undef ENTRY
 
+    // Seed the push-constant block with the configured static center. Without gaze tracking
+    // wired up the push constants stay at this value for the whole stream, reproducing the
+    // pre-eye-tracked behavior.
+    m_foveatedRenderingPushConstants.centerShiftX = centerShiftXAligned;
+    m_foveatedRenderingPushConstants.centerShiftY = centerShiftYAligned;
+
     RenderPipeline* pipeline = new RenderPipeline(this);
     pipeline->SetShader(FFR_SHADER_COMP_SPV_PTR, FFR_SHADER_COMP_SPV_LEN);
     pipeline->SetConstants(&m_foveatedRenderingConstants, std::move(entries));
+    pipeline->SetPushConstants(
+        &m_foveatedRenderingPushConstants, sizeof(m_foveatedRenderingPushConstants)
+    );
     m_pipelines.push_back(pipeline);
     AddPipeline(pipeline);
+}
+
+void FrameRender::UpdateFoveationCenter(float centerShiftX, float centerShiftY) {
+    // Called from CEncoder::Run on the encoder thread, just before Render() dispatches the
+    // FFR compute pipeline. The push-constant store and the vkCmdPushConstants read happen
+    // on the same thread, so no synchronization is needed.
+    //
+    // Apply the same pixel-block alignment the init path uses, so the encoded frame's
+    // foveated regions stay aligned with the encoder's macroblock grid as gaze moves.
+    float targetEyeWidth = (float)Settings::Instance().m_renderWidth / 2;
+    float targetEyeHeight = (float)Settings::Instance().m_renderHeight;
+    float centerSizeX = (float)Settings::Instance().m_foveationCenterSizeX;
+    float centerSizeY = (float)Settings::Instance().m_foveationCenterSizeY;
+    float edgeRatioX = (float)Settings::Instance().m_foveationEdgeRatioX;
+    float edgeRatioY = (float)Settings::Instance().m_foveationEdgeRatioY;
+
+    float edgeSizeX = targetEyeWidth - centerSizeX * targetEyeWidth;
+    float edgeSizeY = targetEyeHeight - centerSizeY * targetEyeHeight;
+
+    float centerSizeXAligned
+        = 1.f - ceilf(edgeSizeX / (edgeRatioX * 2.f)) * (edgeRatioX * 2.f) / targetEyeWidth;
+    float centerSizeYAligned
+        = 1.f - ceilf(edgeSizeY / (edgeRatioY * 2.f)) * (edgeRatioY * 2.f) / targetEyeHeight;
+
+    float edgeSizeXAligned = targetEyeWidth - centerSizeXAligned * targetEyeWidth;
+    float edgeSizeYAligned = targetEyeHeight - centerSizeYAligned * targetEyeHeight;
+
+    // Clamp one foveation block inside the edge: at exactly ±1 the FFR shader's lo/hi bounds
+    // collapse to a divide-by-zero / NaN (see ffr.comp). Matches the client de-warp clamp.
+    float shiftLimitX = 1.f - edgeRatioX * 2.f / edgeSizeXAligned;
+    float shiftLimitY = 1.f - edgeRatioY * 2.f / edgeSizeYAligned;
+    m_foveatedRenderingPushConstants.centerShiftX = std::clamp(
+        ceilf(centerShiftX * edgeSizeXAligned / (edgeRatioX * 2.f)) * (edgeRatioX * 2.f)
+            / edgeSizeXAligned,
+        -shiftLimitX,
+        shiftLimitX
+    );
+    m_foveatedRenderingPushConstants.centerShiftY = std::clamp(
+        ceilf(centerShiftY * edgeSizeYAligned / (edgeRatioY * 2.f)) * (edgeRatioY * 2.f)
+            / edgeSizeYAligned,
+        -shiftLimitY,
+        shiftLimitY
+    );
 }
 
 void FrameRender::setupCustomShaders(const std::string& stage) {

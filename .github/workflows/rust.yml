@@ -111,7 +111,7 @@ jobs:
         run: cargo xtask build-client
 
   tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
         with:
@@ -120,8 +120,13 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install build-essential pkg-config nasm libva-dev libdrm-dev libvulkan-dev libx264-dev libasound2-dev libxrandr-dev libunwind-dev libgtk-3-dev libpipewire-0.3-dev libspa-0.2-dev
+
       - name: Run tests
-        run: cargo test -p alvr_session
+        run: cargo test -p alvr_session -p alvr_server_core -p alvr_graphics
 
   check-format:
     runs-on: ubuntu-latest

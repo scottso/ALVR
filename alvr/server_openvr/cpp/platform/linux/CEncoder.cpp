@@ -243,6 +243,22 @@ void CEncoder::Run() {
                 );
             }
 
+            // Pull the latest gaze-derived foveation center from Rust, push it into the
+            // FFR push-constant buffer, and publish it back to Rust as the value the
+            // encoder will apply for *this* frame. All three calls run on this thread
+            // (the encoder thread), so the push-constant update and the dispatch share a
+            // thread — no torn reads, and the wire header carries the same value the
+            // warp pipeline used.
+            float pendingCenterX = 0.0f;
+            float pendingCenterY = 0.0f;
+            if (GetPendingFoveationCenter) {
+                GetPendingFoveationCenter(&pendingCenterX, &pendingCenterY);
+            }
+            render.UpdateFoveationCenter(pendingCenterX, pendingCenterY);
+            if (SetAppliedFoveationCenter) {
+                SetAppliedFoveationCenter(pendingCenterX, pendingCenterY);
+            }
+
             render.Render(frame_info.image, frame_info.semaphore_value);
 
             if (!valid_timestamps) {

@@ -113,6 +113,21 @@ bool CEncoder::CopyToStaging(
     m_targetTimestampNs = targetTimestampNs;
     m_FrameRender->Startup();
 
+    // Pull the latest gaze-derived foveation center from Rust, push it into the FFR
+    // cbuffer, and publish it back to Rust as the value that will be applied to *this*
+    // frame's encode. All three calls (and RenderFrame's FFR::Render dispatch) run on
+    // this compositor thread, so the D3D11 immediate context is touched by exactly one
+    // thread — no cross-thread UpdateSubresource / Dispatch races.
+    float pendingCenterX = 0.0f;
+    float pendingCenterY = 0.0f;
+    if (GetPendingFoveationCenter) {
+        GetPendingFoveationCenter(&pendingCenterX, &pendingCenterY);
+    }
+    m_FrameRender->UpdateFoveationCenter(pendingCenterX, pendingCenterY);
+    if (SetAppliedFoveationCenter) {
+        SetAppliedFoveationCenter(pendingCenterX, pendingCenterY);
+    }
+
     m_FrameRender->RenderFrame(
         pTexture, bounds, poses, layerCount, recentering, message, debugText
     );
