@@ -1,0 +1,49 @@
+name: Build Windows streamer
+
+# Manually build the PC-side ALVR streamer (SteamVR driver + dashboard) from this
+# fork and upload it as a downloadable .zip artifact. Trigger it by hand from the
+# Actions tab ("Run workflow") and pick the branch to build in the dropdown.
+#
+# Why this exists: the streamer can't be cross-compiled from macOS (the build links
+# the OpenVR C++ driver against MSVC/Windows libs and builds libvpl with CMake/MSVC),
+# so it has to be built on a real Windows toolchain. This produces a streamer that
+# matches THIS fork's client and wire protocol -- including the eye-tracked foveation
+# changes that aren't in any upstream release or nightly.
+#
+# Steps mirror the proven `build_windows_streamer` job in prepare-release.yml; only
+# the release/version-bump plumbing is dropped.
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-windows-streamer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: crazy-max/ghaction-chocolatey@v4
+        with:
+          args: install zip unzip pkgconfiglite
+
+      # --gpl bundles FFmpeg, matching the official Windows release packaging.
+      - name: Build and package streamer
+        env:
+          RUST_BACKTRACE: 1
+        run: cargo xtask package-streamer --gpl --ci
+
+      - name: Upload streamer artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: alvr-windows-streamer
+          path: ./build/alvr_*.zip
+          if-no-files-found: error
