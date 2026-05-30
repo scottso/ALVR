@@ -41,9 +41,13 @@ jobs:
           RUST_BACKTRACE: 1
         run: cargo xtask package-streamer --gpl --ci
 
+      # Upload the unpacked streamer directory, NOT the .zip that package-streamer
+      # produces. upload-artifact always zips whatever it's given, so pointing it at
+      # the pre-made .zip yields a zip-inside-a-zip on download. Giving it the
+      # directory contents makes the downloaded artifact a single, normal .zip.
       - name: Upload streamer artifact
         uses: actions/upload-artifact@v7
         with:
           name: alvr-windows-streamer
-          path: ./build/alvr_*.zip
+          path: ./build/alvr_streamer_windows/
           if-no-files-found: error
