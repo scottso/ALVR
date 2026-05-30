@@ -31,6 +31,19 @@ Useful flags: `--release` (optimized debug build), `--profiling` (enable profili
 
 Build artifacts land in `./build/`; downloaded/compiled deps in `./deps/`.
 
+## This fork
+
+`origin` = `scottso/ALVR`, `upstream` = `alvr-org/ALVR`. This fork's `master` is ahead of `upstream/master` with an **eye-tracked foveation** feature (server encoder + `server_core` + `VideoPacketHeader` wire protocol + `alvr_client_core` C ABI). None of it is in any upstream release or nightly, so a streamer for the visionOS client must be built **from this fork** — see the umbrella `../CLAUDE.md` for why client and server are a matched pair. PSVR2 `PSVR2Sense` controller emulation came from upstream PR #2871 but lives **only on `master`**, not in the latest stable tag v20.14.1.
+
+## Building the Windows streamer
+
+**You cannot cross-compile the Windows streamer from macOS.** `server_openvr/build.rs` gates the entire Windows link path behind host-`cfg!(target_os = "windows")` (not the *target*), and `prepare-deps --platform windows` builds `libvpl` with MSVC/CMake. It only builds on a real Windows toolchain. Two supported paths:
+
+- **GitHub Actions (no Windows machine needed):** the `build-windows-streamer.yml` workflow (`workflow_dispatch`) on `scottso/ALVR` runs `package-streamer --gpl --ci` on a `windows-latest` runner and uploads the streamer as the `alvr-windows-streamer` artifact. Trigger from the Actions tab or `gh workflow run build-windows-streamer.yml --repo scottso/ALVR`. The file must live on the default branch for the trigger to appear. It mirrors the proven `build_windows_streamer` job in `prepare-release.yml`, minus the release plumbing.
+- **On Windows:** `cargo xtask prepare-deps --platform windows` then `cargo xtask build-streamer --platform windows --release --gpl`.
+
+During packaging, `cargo about generate` logs `[ERROR] failed to parse license 'GPL-2.0'` (clearlydefined returns the deprecated bare `GPL-2.0` for `self_cell`, which it declares correctly as `GPL-2.0-only`). This is **non-fatal** — cargo-about falls back to crate metadata and exits 0. Do not treat that line as a build failure.
+
 ## Architecture
 
 ### Streamer ↔ client split
